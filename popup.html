@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 300px;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px 0;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .jump-button {
+            background-color: #2196F3;
+        }
+        .jump-button:hover {
+            background-color: #1976D2;
+        }
+        #status {
+            margin-top: 10px;
+            padding: 5px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+<div class="section">
+    <h3>🌐 发送请求</h3>
+    <select id="requestMethod">
+        <option value="GET">GET</option>
+        <option value="POST">POST</option>
+    </select>
+    <input type="text" id="requestUrl" placeholder="请求URL (例: https://api.example.com/data)" value="https://jsonplaceholder.typicode.com/posts/1">
+    <textarea id="requestData" placeholder="POST数据 (JSON格式)" style="height: 60px; resize: vertical;"></textarea>
+    <button id="sendRequest">📤 发送请求</button>
+    <div id="status"></div>
+</div>
+
+<div class="section">
+    <h3>🔗 URL跳转</h3>
+    <input type="text" id="baseUrl" placeholder="基础URL" value="https://kfcv50.link">
+    <input type="text" id="urlParam" placeholder="要拼接的参数" value="浏览器插件开发">
+    <button id="jumpButton" class="jump-button">🚀 拼接并跳转</button>
+</div>
+
+<div class="section">
+    <h3>📋 表格操作</h3>
+    <input type="text" id="bridgeBaseUrl" placeholder="桥接基础URL" value="https://kfcv50.link">
+    <input type="text" id="bridgeName" placeholder="桥接名称" value="KFC V50 API 一键对接">
+    <button id="scanTables">🔍 扫描表格并添加按钮</button>
+    <button id="removeBtns">🗑️ 移除所有按钮</button>
+    <div id="tableStatus"></div>
+</div>
+
+<div class="section">
+    <h3>⚙️ 设置</h3>
+    <button id="saveSettings">💾 保存当前设置</button>
+    <button id="clearSettings">🗑️ 清除设置</button>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

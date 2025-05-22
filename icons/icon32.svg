@@ -1,0 +1,25 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+    <!-- 背景圆形 -->
+    <circle cx="64" cy="64" r="60" fill="#4CAF50" stroke="#2E7D32" stroke-width="2"/>
+
+    <!-- API图标 - 三个连接的圆点 -->
+    <circle cx="35" cy="45" r="8" fill="white"/>
+    <circle cx="64" cy="45" r="8" fill="white"/>
+    <circle cx="93" cy="45" r="8" fill="white"/>
+
+    <!-- 连接线 -->
+    <line x1="43" y1="45" x2="56" y2="45" stroke="white" stroke-width="3"/>
+    <line x1="72" y1="45" x2="85" y2="45" stroke="white" stroke-width="3"/>
+
+    <!-- 桥接符号 -->
+    <path d="M 25 65 Q 64 50 103 65" stroke="white" stroke-width="4" fill="none"/>
+    <path d="M 25 75 Q 64 60 103 75" stroke="white" stroke-width="4" fill="none"/>
+
+    <!-- Shell图标 -->
+    <rect x="45" y="85" width="38" height="20" rx="3" fill="white"/>
+    <rect x="48" y="88" width="32" height="14" rx="2" fill="#4CAF50"/>
+
+    <!-- 命令行符号 -->
+    <text x="52" y="98" font-family="monospace" font-size="8" fill="white">$</text>
+    <line x1="58" y1="95" x2="75" y2="95" stroke="white" stroke-width="1"/>
+</svg>

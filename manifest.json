@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "ShellAPI Bridge Extension",
+  "short_name": "ShellAPI Bridge",
+  "version": "1.0.0",
+  "description": "一键对接Shell API的浏览器插件 - 自动扫描表格、获取模型列表、生成桥接URL",
+  "author": "您的名字",
+  "homepage_url": "https://github.com/akl7777777/ShellAPI-Bridge-Extension",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ShellAPI Bridge - 一键对接API"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
