@@ -39,13 +39,7 @@
         button:hover {
             background-color: #45a049;
         }
-        .jump-button {
-            background-color: #2196F3;
-        }
-        .jump-button:hover {
-            background-color: #1976D2;
-        }
-        #status {
+        #status, #tokenStatus, #tableStatus {
             margin-top: 10px;
             padding: 5px;
             border-radius: 3px;
@@ -59,37 +53,29 @@
             background-color: #f8d7da;
             color: #721c24;
         }
+        .info {
+            background-color: #e1f5fe;
+            color: #0277bd;
+        }
+        .note {
+            font-size: 12px;
+            color: #666;
+            margin: 5px 0 10px;
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
 <div class="section">
-    <h3>🌐 发送请求</h3>
-    <select id="requestMethod">
-        <option value="GET">GET</option>
-        <option value="POST">POST</option>
-    </select>
-    <input type="text" id="requestUrl" placeholder="请求URL (例: https://api.example.com/data)" value="https://jsonplaceholder.typicode.com/posts/1">
-    <textarea id="requestData" placeholder="POST数据 (JSON格式)" style="height: 60px; resize: vertical;"></textarea>
-    <button id="sendRequest">📤 发送请求</button>
-    <div id="status"></div>
-</div>
-
-<div class="section">
-    <h3>🔗 URL跳转</h3>
-    <input type="text" id="baseUrl" placeholder="基础URL" value="https://kfcv50.link">
-    <input type="text" id="urlParam" placeholder="要拼接的参数" value="浏览器插件开发">
-    <button id="jumpButton" class="jump-button">🚀 拼接并跳转</button>
-</div>
-
-<div class="section">
     <h3>🔑 Token管理</h3>
-    <button id="fetchToken">📡 获取Access Token</button>
+    <p class="note">从当前页面获取Token，不会刷新现有的Token。需要在已登录的ShellAPI页面中使用。</p>
+    <button id="fetchToken">获取当前页面Access Token</button>
     <input type="text" id="accessToken" placeholder="Access Token (自动获取)" readonly>
     <div id="tokenStatus"></div>
 </div>
 
 <div class="section">
-    <h3>📋 表格操作</h3>
+    <h3>📋 一键对接设置</h3>
     <input type="text" id="bridgeBaseUrl" placeholder="桥接基础URL" value="https://kfcv50.link">
     <input type="text" id="bridgeName" placeholder="桥接名称" value="KFC V50 API 一键对接">
     <button id="scanTables">🔍 扫描表格并添加按钮</button>

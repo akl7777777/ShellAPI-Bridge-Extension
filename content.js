@@ -41,15 +41,6 @@ function getUserId() {
         }
     } catch (e) {}
 
-    const userElements = document.querySelectorAll('[data-user-id], [data-userid], .user-id');
-    for (const el of userElements) {
-        const id = el.getAttribute('data-user-id') || el.getAttribute('data-userid') || el.textContent;
-        if (id && !isNaN(id)) {
-            console.log(`✅ 从页面元素获取到用户ID: ${id}`);
-            return id.toString();
-        }
-    }
-
     console.log('⚠️ 无法自动获取用户ID，使用默认值256');
     return '256';
 }
@@ -168,7 +159,8 @@ function showNotification(message, type) {
 // 获取Access Token
 async function fetchAccessToken(baseUrl) {
     try {
-        showNotification('正在获取Access Token...', 'info');
+        showNotification('正在获取当前页面的Access Token...', 'info');
+        console.log('🔑 获取Access Token (不会刷新现有Token)');
 
         if (!currentUserId) {
             currentUserId = getUserId();
@@ -205,8 +197,9 @@ async function fetchAccessToken(baseUrl) {
             currentUserId = data.data.id.toString();
         }
 
-        showNotification('Access Token获取成功！', 'success');
+        showNotification('Access Token获取成功！此操作不会刷新现有Token', 'success');
         console.log(`✅ Token获取成功，用户: ${data.data.username || data.data.id}`);
+        console.log(`ℹ️ 此操作只是读取现有Token，不会导致Token失效`);
 
         return {
             success: true,
@@ -216,22 +209,11 @@ async function fetchAccessToken(baseUrl) {
 
     } catch (error) {
         console.error('❌ 获取Token失败:', error);
-        showNotification(`获取Access Token失败: ${error.message}`, 'error');
+        showNotification(`获取Access Token失败: ${error.message}。请确保已登录ShellAPI。`, 'error');
         return {
             success: false,
             error: error.message
         };
-    }
-}
-
-// 验证Access Token是否有效
-async function validateAccessToken() {
-    try {
-        // 使用统一的API请求函数
-        const response = await makeAPIRequest(`${window.location.origin}/api/user/self`);
-        return response.ok;
-    } catch (error) {
-        return false;
     }
 }
 
@@ -253,26 +235,6 @@ async function loadStoredConfig() {
                 }
                 console.log('📦 已加载存储的配置');
             }
-
-            try {
-                const userStr = localStorage.getItem('user');
-                if (userStr) {
-                    const user = JSON.parse(userStr);
-                    console.log('👤 用户信息:', {
-                        id: user.id,
-                        username: user.username,
-                        email: user.email
-                    });
-
-                    if (user.id && user.id.toString() !== currentUserId) {
-                        currentUserId = user.id.toString();
-                        console.log(`🔄 更新用户ID为: ${currentUserId}`);
-                    }
-                }
-            } catch (e) {
-                console.log('解析localStorage用户信息失败:', e);
-            }
-
             resolve();
         });
     });
@@ -299,36 +261,6 @@ async function waitForPageReady() {
 
         checkReady();
     });
-}
-
-// 自动获取Access Token
-async function autoFetchAccessToken() {
-    try {
-        if (currentAccessToken) {
-            const isValid = await validateAccessToken();
-            if (isValid) {
-                console.log('✅ 现有Token仍然有效');
-                return { success: true };
-            }
-        }
-
-        console.log('🔑 正在自动获取Access Token...');
-        const baseUrl = window.location.origin;
-        const result = await fetchAccessToken(baseUrl);
-
-        if (result.success) {
-            chrome.storage.sync.set({
-                accessToken: result.accessToken,
-                tokenBaseUrl: baseUrl
-            });
-            console.log('✅ Access Token获取成功');
-        }
-
-        return result;
-    } catch (error) {
-        console.error('❌ 自动获取Token失败:', error);
-        return { success: false, error: error.message };
-    }
 }
 
 // 扫描表格并添加操作按钮
@@ -646,56 +578,6 @@ function removeAllButtons() {
     return removedCount;
 }
 
-// 创建快捷操作按钮
-function createQuickActionButton() {
-    const existingBtn = document.getElementById('shellapi-quick-btn');
-    if (existingBtn) {
-        return;
-    }
-
-    const quickBtn = document.createElement('div');
-    quickBtn.id = 'shellapi-quick-btn';
-    quickBtn.innerHTML = '🚀';
-    quickBtn.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        width: 50px;
-        height: 50px;
-        background: #4CAF50;
-        color: white;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        z-index: 10000;
-        font-size: 20px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-        transition: all 0.3s ease;
-        user-select: none;
-    `;
-
-    quickBtn.addEventListener('mouseenter', () => {
-        quickBtn.style.transform = 'scale(1.1)';
-        quickBtn.style.background = '#45a049';
-    });
-
-    quickBtn.addEventListener('mouseleave', () => {
-        quickBtn.style.transform = 'scale(1)';
-        quickBtn.style.background = '#4CAF50';
-    });
-
-    quickBtn.addEventListener('click', () => {
-        performQuickAction();
-    });
-
-    document.body.appendChild(quickBtn);
-    
-    // 添加控制面板
-    createControlPanel();
-}
-
 // 创建控制面板
 function createControlPanel() {
     const existingPanel = document.getElementById('shellapi-control-panel');
@@ -793,20 +675,6 @@ function createControlPanel() {
     document.body.appendChild(panel);
 }
 
-// 执行快速操作
-async function performQuickAction() {
-    try {
-        if (!autoProcessing) {
-            showNotification('🔄 正在重新初始化...', 'info');
-            await autoInitialize();
-        } else {
-            showNotification('⚠️ 正在处理中，请稍候...', 'info');
-        }
-    } catch (error) {
-        showNotification('操作失败: ' + error.message, 'error');
-    }
-}
-
 // ===========================================
 // 自动初始化主函数
 // ===========================================
@@ -820,13 +688,6 @@ async function autoInitialize() {
         console.log('🚀 开始初始化...');
 
         await loadStoredConfig();
-
-        const tokenResult = await autoFetchAccessToken();
-        if (!tokenResult.success) {
-            console.log('⚠️ 无法自动获取Token，可能需要登录');
-            autoProcessing = false;
-            return;
-        }
 
         await waitForPageReady();
         
@@ -912,43 +773,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         showNotification(request.message, request.type);
         sendResponse({success: true});
     }
-
-    if (request.action === 'getPageInfo') {
-        sendResponse({
-            url: window.location.href,
-            title: document.title,
-            selectedText: window.getSelection().toString()
-        });
-    }
-});
-
-// 监听键盘快捷键
-document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-        e.preventDefault();
-        performQuickAction();
-    }
-
-    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
-        e.preventDefault();
-        const selectedText = window.getSelection().toString().trim();
-        if (selectedText) {
-            chrome.storage.sync.get('settings', (result) => {
-                if (result.settings && result.settings.baseUrl) {
-                    const url = result.settings.baseUrl + encodeURIComponent(selectedText);
-                    window.open(url, '_blank');
-                }
-            });
-        } else {
-            showNotification('请先选择要搜索的文字', 'info');
-        }
-    }
 });
 
 // 统一的初始化入口
 async function initializeExtension() {
     try {
-        createQuickActionButton();
+        createControlPanel();
         await loadStoredConfig(); // 只加载配置，不自动扫描
     } catch (error) {
         console.error('❌ 插件初始化失败:', error);
@@ -961,25 +791,3 @@ if (document.readyState === 'loading') {
 } else {
     setTimeout(initializeExtension, 1000);
 }
-
-// 监听页面变化（对于单页应用）
-let lastUrl = window.location.href;
-const urlObserver = new MutationObserver(() => {
-    const currentUrl = window.location.href;
-    if (currentUrl !== lastUrl) {
-        lastUrl = currentUrl;
-        console.log('🔄 页面URL变化，重新初始化...');
-        setTimeout(() => {
-            if (!autoProcessing) {
-                initializeExtension();
-            }
-        }, 2000);
-    }
-});
-
-urlObserver.observe(document, {subtree: true, childList: true});
-
-window.addEventListener('beforeunload', () => {
-    urlObserver.disconnect();
-    removeAllButtons();
-});
