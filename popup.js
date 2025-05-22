@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const scanTablesBtn = document.getElementById('scanTables');
     const removeBtnsBtn = document.getElementById('removeBtns');
     const tableStatusDiv = document.getElementById('tableStatus');
+    const fetchTokenBtn = document.getElementById('fetchToken');
+    const accessTokenInput = document.getElementById('accessToken');
+    const tokenStatusDiv = document.getElementById('tokenStatus');
     const statusDiv = document.getElementById('status');
     const saveSettingsBtn = document.getElementById('saveSettings');
     const clearSettingsBtn = document.getElementById('clearSettings');
@@ -100,6 +103,34 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // 获取Access Token
+    fetchTokenBtn.addEventListener('click', function() {
+        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+            const currentUrl = tabs[0].url;
+            const baseUrl = new URL(currentUrl).origin;
+
+            showTokenStatus('正在获取Access Token...', 'info');
+
+            chrome.tabs.sendMessage(tabs[0].id, {
+                action: 'fetchAccessToken',
+                baseUrl: baseUrl
+            }, function(response) {
+                if (response && response.success) {
+                    accessTokenInput.value = response.accessToken;
+                    showTokenStatus('Access Token获取成功！', 'success');
+
+                    // 保存token到存储
+                    chrome.storage.sync.set({
+                        accessToken: response.accessToken,
+                        tokenBaseUrl: baseUrl
+                    });
+                } else {
+                    showTokenStatus('获取Access Token失败：' + (response?.error || '未知错误'), 'error');
+                }
+            });
+        });
+    });
+
     // 扫描表格并添加按钮
     scanTablesBtn.addEventListener('click', function() {
         const bridgeBaseUrl = bridgeBaseUrlInput.value.trim();
@@ -147,7 +178,8 @@ document.addEventListener('DOMContentLoaded', function() {
             baseUrl: baseUrlInput.value,
             urlParam: urlParamInput.value,
             bridgeBaseUrl: bridgeBaseUrlInput.value,
-            bridgeName: bridgeNameInput.value
+            bridgeName: bridgeNameInput.value,
+            accessToken: accessTokenInput.value
         };
 
         chrome.storage.sync.set({settings: settings}, function() {
@@ -166,6 +198,7 @@ document.addEventListener('DOMContentLoaded', function() {
             urlParamInput.value = '浏览器插件开发';
             bridgeBaseUrlInput.value = 'https://kfcv50.link';
             bridgeNameInput.value = 'KFC V50 API 一键对接';
+            accessTokenInput.value = '';
             showStatus('设置已清除', 'success');
         });
     });
@@ -182,8 +215,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 urlParamInput.value = settings.urlParam || '浏览器插件开发';
                 bridgeBaseUrlInput.value = settings.bridgeBaseUrl || 'https://kfcv50.link';
                 bridgeNameInput.value = settings.bridgeName || 'KFC V50 API 一键对接';
+                accessTokenInput.value = settings.accessToken || '';
             }
         });
+    }
+
+    // 显示Token状态信息
+    function showTokenStatus(message, type) {
+        tokenStatusDiv.textContent = message;
+        tokenStatusDiv.className = type;
+
+        // 3秒后自动清除状态
+        setTimeout(() => {
+            tokenStatusDiv.textContent = '';
+            tokenStatusDiv.className = '';
+        }, 3000);
     }
 
     // 显示表格状态信息
@@ -219,6 +265,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 jumpBtn.click();
             } else if (e.target === bridgeBaseUrlInput || e.target === bridgeNameInput) {
                 scanTablesBtn.click();
+            } else if (e.target === accessTokenInput) {
+                fetchTokenBtn.click();
             }
         }
     });

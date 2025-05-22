@@ -2,23 +2,326 @@
 // 可以访问和修改网页DOM
 
 let tableButtons = []; // 存储添加的按钮元素
+let currentAccessToken = ''; // 存储当前的access token
+let currentUserId = ''; // 存储当前用户ID
+let autoProcessing = false; // 防止重复自动处理
+let currentBridgeConfig = {
+    baseUrl: 'https://kfcv50.link',
+    name: 'KFC V50 API 一键对接'
+};
+
+// ===========================================
+// 工具函数（必须在其他函数之前定义）
+// ===========================================
+
+// 获取用户ID（从localStorage中解析）
+function getUserId() {
+    try {
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+            const user = JSON.parse(userStr);
+            if (user.id) {
+                console.log(`✅ 从localStorage获取到用户ID: ${user.id}`);
+                return user.id.toString();
+            }
+        }
+    } catch (e) {
+        console.log('解析localStorage user失败:', e);
+    }
+
+    try {
+        const userInfo = localStorage.getItem('userInfo');
+        if (userInfo) {
+            const user = JSON.parse(userInfo);
+            if (user.id) {
+                console.log(`✅ 从localStorage userInfo获取到用户ID: ${user.id}`);
+                return user.id.toString();
+            }
+        }
+    } catch (e) {}
+
+    const userElements = document.querySelectorAll('[data-user-id], [data-userid], .user-id');
+    for (const el of userElements) {
+        const id = el.getAttribute('data-user-id') || el.getAttribute('data-userid') || el.textContent;
+        if (id && !isNaN(id)) {
+            console.log(`✅ 从页面元素获取到用户ID: ${id}`);
+            return id.toString();
+        }
+    }
+
+    console.log('⚠️ 无法自动获取用户ID，使用默认值256');
+    return '256';
+}
+
+// 显示通知
+function showNotification(message, type) {
+    const existingNotification = document.getElementById('shellapi-notification');
+    if (existingNotification) {
+        existingNotification.remove();
+    }
+
+    const notification = document.createElement('div');
+    notification.id = 'shellapi-notification';
+
+    const bgColor = type === 'success' ? '#4CAF50' :
+        type === 'error' ? '#f44336' : '#2196F3';
+
+    notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: ${bgColor};
+        color: white;
+        padding: 15px 20px;
+        border-radius: 5px;
+        z-index: 10001;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        max-width: 300px;
+        word-wrap: break-word;
+        animation: slideIn 0.3s ease;
+    `;
+
+    if (!document.getElementById('shellapi-styles')) {
+        const style = document.createElement('style');
+        style.id = 'shellapi-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 300);
+    }, 3000);
+}
+
+// ===========================================
+// 核心功能函数
+// ===========================================
+
+// 获取Access Token
+async function fetchAccessToken(baseUrl) {
+    try {
+        showNotification('正在获取Access Token...', 'info');
+
+        if (!currentUserId) {
+            currentUserId = getUserId();
+            console.log(`🆔 使用用户ID: ${currentUserId}`);
+        }
+
+        const response = await fetch(`${baseUrl}/api/user/self`, {
+            method: 'GET',
+            headers: {
+                'accept': 'application/json, text/plain, */*',
+                'accept-language': 'zh-CN,zh;q=0.9',
+                'cache-control': 'no-store',
+                'new-api-user': currentUserId,
+                'pragma': 'no-cache',
+                'priority': 'u=1, i',
+                'sec-ch-ua': '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"macOS"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin'
+            },
+            referrer: `${baseUrl}/personal`,
+            referrerPolicy: 'strict-origin-when-cross-origin',
+            body: null,
+            mode: 'cors',
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.success || !data.data || !data.data.access_token) {
+            throw new Error('API返回数据格式不正确或未找到access_token');
+        }
+
+        const accessToken = data.data.access_token;
+        currentAccessToken = accessToken;
+
+        if (data.data.id) {
+            currentUserId = data.data.id.toString();
+        }
+
+        showNotification('Access Token获取成功！', 'success');
+        console.log(`✅ Token获取成功，用户: ${data.data.username || data.data.id}`);
+
+        return {
+            success: true,
+            accessToken: accessToken,
+            userData: data.data
+        };
+
+    } catch (error) {
+        console.error('❌ 获取Token失败:', error);
+        showNotification(`获取Access Token失败: ${error.message}`, 'error');
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+// 验证Access Token是否有效
+async function validateAccessToken() {
+    try {
+        if (!currentUserId) {
+            currentUserId = getUserId();
+        }
+
+        const response = await fetch(`${window.location.origin}/api/user/self`, {
+            method: 'GET',
+            headers: {
+                'accept': 'application/json, text/plain, */*',
+                'accept-language': 'zh-CN,zh;q=0.9',
+                'cache-control': 'no-store',
+                'new-api-user': currentUserId,
+                'pragma': 'no-cache',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin'
+            },
+            credentials: 'include'
+        });
+
+        return response.ok;
+    } catch (error) {
+        return false;
+    }
+}
+
+// 加载存储的配置
+async function loadStoredConfig() {
+    return new Promise((resolve) => {
+        currentUserId = getUserId();
+
+        chrome.storage.sync.get(['settings'], (result) => {
+            if (result.settings) {
+                if (result.settings.bridgeBaseUrl) {
+                    currentBridgeConfig.baseUrl = result.settings.bridgeBaseUrl;
+                }
+                if (result.settings.bridgeName) {
+                    currentBridgeConfig.name = result.settings.bridgeName;
+                }
+                if (result.settings.accessToken) {
+                    currentAccessToken = result.settings.accessToken;
+                }
+                console.log('📦 已加载存储的配置');
+            }
+
+            try {
+                const userStr = localStorage.getItem('user');
+                if (userStr) {
+                    const user = JSON.parse(userStr);
+                    console.log('👤 用户信息:', {
+                        id: user.id,
+                        username: user.username,
+                        email: user.email
+                    });
+
+                    if (user.id && user.id.toString() !== currentUserId) {
+                        currentUserId = user.id.toString();
+                        console.log(`🔄 更新用户ID为: ${currentUserId}`);
+                    }
+                }
+            } catch (e) {
+                console.log('解析localStorage用户信息失败:', e);
+            }
+
+            resolve();
+        });
+    });
+}
+
+// 等待页面准备就绪
+async function waitForPageReady() {
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 20;
+
+        const checkReady = () => {
+            const tables = document.querySelectorAll('table, .semi-table');
+            const dataRows = document.querySelectorAll('tbody tr, .semi-table-tbody tr');
+
+            if (dataRows.length > 0 || attempts >= maxAttempts) {
+                console.log(`📋 页面准备就绪，发现 ${dataRows.length} 行数据`);
+                resolve();
+            } else {
+                attempts++;
+                setTimeout(checkReady, 500);
+            }
+        };
+
+        checkReady();
+    });
+}
+
+// 自动获取Access Token
+async function autoFetchAccessToken() {
+    try {
+        if (currentAccessToken) {
+            const isValid = await validateAccessToken();
+            if (isValid) {
+                console.log('✅ 现有Token仍然有效');
+                return { success: true };
+            }
+        }
+
+        console.log('🔑 正在自动获取Access Token...');
+        const baseUrl = window.location.origin;
+        const result = await fetchAccessToken(baseUrl);
+
+        if (result.success) {
+            chrome.storage.sync.set({
+                accessToken: result.accessToken,
+                tokenBaseUrl: baseUrl
+            });
+            console.log('✅ Access Token获取成功');
+        }
+
+        return result;
+    } catch (error) {
+        console.error('❌ 自动获取Token失败:', error);
+        return { success: false, error: error.message };
+    }
+}
 
 // 扫描表格并添加操作按钮
 function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
-    // 查找所有表格，包括 Semi Design 表格
     const tables = document.querySelectorAll('table, .semi-table');
     let tableCount = 0;
     let buttonCount = 0;
 
     tables.forEach((table, tableIndex) => {
-        // 查找表头和数据行
         const headerRows = table.querySelectorAll('thead tr, .semi-table-thead tr');
         const dataRows = table.querySelectorAll('tbody tr, .semi-table-tbody tr');
 
         if (dataRows.length > 0) {
             tableCount++;
 
-            // 为表头添加操作列（如果存在表头）
             headerRows.forEach(headerRow => {
                 const headerCell = document.createElement('th');
                 headerCell.textContent = 'API操作';
@@ -37,21 +340,16 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
                 headerRow.appendChild(headerCell);
             });
 
-            // 为每个数据行添加操作按钮
             dataRows.forEach((row, rowIndex) => {
-                // 获取所有单元格
                 const cells = row.querySelectorAll('td, .semi-table-row-cell');
                 if (cells.length === 0) return;
 
-                // 提取名称（查找第二列，因为第一列通常是复选框）
                 let keyValue = '';
                 if (cells.length > 1 && cells[1]) {
-                    // 获取单元格的文本内容，处理可能的嵌套元素
                     const textElement = cells[1].querySelector('[title]') || cells[1];
                     keyValue = textElement.textContent?.trim() || textElement.getAttribute('title')?.trim() || '';
                 }
 
-                // 如果没有找到第二列，尝试第一列
                 if (!keyValue && cells[0]) {
                     keyValue = cells[0].textContent?.trim() || '';
                 }
@@ -63,9 +361,8 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
 
                 console.log(`为行 ${rowIndex} 添加按钮，key值: ${keyValue}`);
 
-                // 创建新的操作单元格
                 const actionCell = document.createElement('td');
-                actionCell.className = 'shellapi-action-cell semi-table-row-cell';
+                actionCell.className = `shellapi-action-cell-${Date.now()}-${rowIndex} semi-table-row-cell`;
                 actionCell.setAttribute('role', 'gridcell');
                 actionCell.setAttribute('aria-colindex', cells.length + 1);
                 actionCell.style.cssText = `
@@ -79,7 +376,7 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
 
                 const actionBtn = document.createElement('button');
                 actionBtn.textContent = '🔗 获取模型';
-                actionBtn.className = 'shellapi-action-btn';
+                actionBtn.className = `shellapi-action-btn-${Date.now()}-${rowIndex}`;
                 actionBtn.setAttribute('type', 'button');
                 actionBtn.style.cssText = `
                     background: #4CAF50;
@@ -95,7 +392,6 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
                     white-space: nowrap;
                 `;
 
-                // 鼠标悬停效果
                 actionBtn.addEventListener('mouseenter', () => {
                     actionBtn.style.background = '#45a049';
                     actionBtn.style.transform = 'translateY(-1px)';
@@ -108,7 +404,6 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
                     actionBtn.style.boxShadow = '0 2px 4px rgba(76, 175, 80, 0.3)';
                 });
 
-                // 点击事件
                 actionBtn.addEventListener('click', async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -118,7 +413,6 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
                 actionCell.appendChild(actionBtn);
                 row.appendChild(actionCell);
 
-                // 记录添加的按钮和单元格
                 tableButtons.push({
                     button: actionBtn,
                     cell: actionCell,
@@ -132,26 +426,51 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
     return { tableCount, buttonCount };
 }
 
+// 自动扫描并添加按钮
+async function autoScanAndAddButtons() {
+    try {
+        removeAllButtons();
+
+        const result = scanTablesAndAddButtons(currentBridgeConfig.baseUrl, currentBridgeConfig.name);
+
+        if (result.buttonCount > 0) {
+            console.log(`✅ 自动添加了 ${result.buttonCount} 个按钮`);
+            showNotification(`自动扫描完成：添加了 ${result.buttonCount} 个API操作按钮`, 'success');
+        } else {
+            console.log('ℹ️ 未找到合适的表格行');
+        }
+
+        return result;
+    } catch (error) {
+        console.error('❌ 自动扫描失败:', error);
+        throw error;
+    }
+}
+
 // 处理行操作
 async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
     const originalText = button.textContent;
 
     try {
-        // 更新按钮状态
+        if (!currentAccessToken) {
+            showNotification('请先获取Access Token', 'error');
+            return;
+        }
+
         button.textContent = '⏳ 获取中...';
         button.disabled = true;
         button.style.background = '#ffa726';
 
-        // 构建API URL
         const apiUrl = `${window.location.protocol}//${window.location.host}/v1/models`;
 
         showNotification(`正在请求: ${apiUrl}`, 'info');
 
-        // 发送请求到 /v1/models
         const response = await fetch(apiUrl, {
             method: 'GET',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentAccessToken}`,
+                'accept': 'application/json, text/plain, */*'
             }
         });
 
@@ -161,27 +480,20 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
 
         const data = await response.json();
 
-        // 检查返回数据格式
         if (!data.success || !data.data || !Array.isArray(data.data)) {
             throw new Error('API返回数据格式不正确');
         }
 
-        // 拼接模型列表
         const models = data.data.join(',');
-
-        // 构建最终URL
         const finalUrl = buildBridgeUrl(bridgeBaseUrl, bridgeName, models);
 
-        // 在新标签页打开
         window.open(finalUrl, '_blank');
 
         showNotification(`成功获取 ${data.data.length} 个模型，正在跳转...`, 'success');
 
-        // 恢复按钮状态
         button.textContent = '✅ 完成';
         button.style.background = '#4CAF50';
 
-        // 2秒后恢复原始状态
         setTimeout(() => {
             button.textContent = originalText;
             button.disabled = false;
@@ -190,12 +502,10 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
     } catch (error) {
         showNotification(`操作失败: ${error.message}`, 'error');
 
-        // 恢复按钮状态
         button.textContent = '❌ 失败';
         button.style.background = '#f44336';
         button.disabled = false;
 
-        // 2秒后恢复原始状态
         setTimeout(() => {
             button.textContent = originalText;
             button.style.background = '#4CAF50';
@@ -220,33 +530,41 @@ function buildBridgeUrl(bridgeBaseUrl, bridgeName, models) {
 function removeAllButtons() {
     let removedCount = 0;
 
-    // 移除所有添加的按钮和单元格
     tableButtons.forEach(item => {
         if (item.cell && item.cell.parentNode) {
-            item.cell.remove(); // 移除整个单元格
+            item.cell.remove();
             removedCount++;
         }
     });
 
-    // 移除表头中的API操作列
     document.querySelectorAll('.shellapi-header-cell').forEach(th => {
-        th.remove();
+        if (th.parentNode) {
+            th.remove();
+        }
     });
 
-    // 清空按钮数组
+    document.querySelectorAll('[class*="shellapi-action-"]').forEach(element => {
+        if (element.parentNode) {
+            element.remove();
+            removedCount++;
+        }
+    });
+
     tableButtons = [];
 
+    console.log(`🧹 清理了 ${removedCount} 个元素`);
     return removedCount;
 }
+
+// 创建快捷操作按钮
 function createQuickActionButton() {
-    // 检查是否已经存在按钮
-    if (document.getElementById('auto-request-quick-btn')) {
+    const existingBtn = document.getElementById('shellapi-quick-btn');
+    if (existingBtn) {
         return;
     }
 
-    // 创建浮动按钮
     const quickBtn = document.createElement('div');
-    quickBtn.id = 'auto-request-quick-btn';
+    quickBtn.id = 'shellapi-quick-btn';
     quickBtn.innerHTML = '🚀';
     quickBtn.style.cssText = `
         position: fixed;
@@ -265,9 +583,9 @@ function createQuickActionButton() {
         font-size: 20px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.3);
         transition: all 0.3s ease;
+        user-select: none;
     `;
 
-    // 鼠标悬停效果
     quickBtn.addEventListener('mouseenter', () => {
         quickBtn.style.transform = 'scale(1.1)';
         quickBtn.style.background = '#45a049';
@@ -278,7 +596,6 @@ function createQuickActionButton() {
         quickBtn.style.background = '#4CAF50';
     });
 
-    // 点击事件
     quickBtn.addEventListener('click', () => {
         performQuickAction();
     });
@@ -289,128 +606,82 @@ function createQuickActionButton() {
 // 执行快速操作
 async function performQuickAction() {
     try {
-        // 获取保存的设置
-        const result = await new Promise((resolve) => {
-            chrome.storage.sync.get('settings', resolve);
-        });
-
-        if (result.settings) {
-            const settings = result.settings;
-
-            // 发送请求
-            if (settings.requestUrl) {
-                showNotification('正在发送请求...', 'info');
-
-                const response = await fetch(settings.requestUrl, {
-                    method: settings.requestMethod || 'GET',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: settings.requestMethod === 'POST' ? settings.requestData : undefined
-                });
-
-                if (response.ok) {
-                    showNotification('请求发送成功!', 'success');
-                } else {
-                    showNotification('请求发送失败!', 'error');
-                }
-            }
+        if (!autoProcessing) {
+            showNotification('🔄 正在重新初始化...', 'info');
+            await autoInitialize();
+        } else {
+            showNotification('⚠️ 正在处理中，请稍候...', 'info');
         }
     } catch (error) {
         showNotification('操作失败: ' + error.message, 'error');
     }
 }
 
-// 显示通知
-function showNotification(message, type) {
-    // 移除现有通知
-    const existingNotification = document.getElementById('auto-request-notification');
-    if (existingNotification) {
-        existingNotification.remove();
+// ===========================================
+// 自动初始化主函数
+// ===========================================
+
+// 自动初始化功能
+async function autoInitialize() {
+    if (autoProcessing) return;
+    autoProcessing = true;
+
+    try {
+        console.log('🚀 开始自动初始化...');
+
+        await loadStoredConfig();
+
+        const tokenResult = await autoFetchAccessToken();
+        if (!tokenResult.success) {
+            console.log('⚠️ 无法自动获取Token，可能需要登录');
+            autoProcessing = false;
+            return;
+        }
+
+        await waitForPageReady();
+        await autoScanAndAddButtons();
+
+        console.log('✅ 自动初始化完成');
+
+    } catch (error) {
+        console.error('❌ 自动初始化失败:', error);
+        showNotification('自动初始化失败: ' + error.message, 'error');
+    } finally {
+        autoProcessing = false;
     }
-
-    // 创建通知元素
-    const notification = document.createElement('div');
-    notification.id = 'auto-request-notification';
-
-    const bgColor = type === 'success' ? '#4CAF50' :
-        type === 'error' ? '#f44336' : '#2196F3';
-
-    notification.style.cssText = `
-        position: fixed;
-        top: 80px;
-        right: 20px;
-        background: ${bgColor};
-        color: white;
-        padding: 15px 20px;
-        border-radius: 5px;
-        z-index: 10001;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-        max-width: 300px;
-        word-wrap: break-word;
-        animation: slideIn 0.3s ease;
-    `;
-
-    // 添加CSS动画
-    if (!document.getElementById('auto-request-styles')) {
-        const style = document.createElement('style');
-        style.id = 'auto-request-styles';
-        style.textContent = `
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-            @keyframes slideOut {
-                from { transform: translateX(0); opacity: 1; }
-                to { transform: translateX(100%); opacity: 0; }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-
-    notification.textContent = message;
-    document.body.appendChild(notification);
-
-    // 3秒后自动移除
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => {
-            notification.remove();
-        }, 300);
-    }, 3000);
 }
 
-// 监听键盘快捷键
-document.addEventListener('keydown', (e) => {
-    // Ctrl + Shift + R 触发快速请求
-    if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-        e.preventDefault();
-        performQuickAction();
-    }
-
-    // Ctrl + Shift + J 快速跳转
-    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
-        e.preventDefault();
-        const selectedText = window.getSelection().toString().trim();
-        if (selectedText) {
-            chrome.storage.sync.get('settings', (result) => {
-                if (result.settings && result.settings.baseUrl) {
-                    const url = result.settings.baseUrl + encodeURIComponent(selectedText);
-                    window.open(url, '_blank');
-                }
-            });
-        } else {
-            showNotification('请先选择要搜索的文字', 'info');
-        }
-    }
-});
+// ===========================================
+// 消息监听和页面初始化
+// ===========================================
 
 // 监听来自popup或background的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'fetchAccessToken') {
+        fetchAccessToken(request.baseUrl)
+            .then(result => {
+                if (result.success) {
+                    currentAccessToken = result.accessToken;
+                }
+                sendResponse(result);
+            })
+            .catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error.message
+                });
+            });
+        return true;
+    }
+
     if (request.action === 'scanTables') {
         try {
+            chrome.storage.sync.get(['accessToken'], (result) => {
+                if (result.accessToken) {
+                    currentAccessToken = result.accessToken;
+                }
+            });
+
             const result = scanTablesAndAddButtons(request.bridgeBaseUrl, request.bridgeName);
             sendResponse({
                 success: true,
@@ -423,7 +694,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 error: error.message
             });
         }
-        return true; // 异步响应
+        return true;
     }
 
     if (request.action === 'removeButtons') {
@@ -456,20 +727,64 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-// 页面加载完成后创建快捷按钮
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', createQuickActionButton);
-} else {
-    createQuickActionButton();
+// 监听键盘快捷键
+document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        performQuickAction();
+    }
+
+    if (e.ctrlKey && e.shiftKey && e.key === 'J') {
+        e.preventDefault();
+        const selectedText = window.getSelection().toString().trim();
+        if (selectedText) {
+            chrome.storage.sync.get('settings', (result) => {
+                if (result.settings && result.settings.baseUrl) {
+                    const url = result.settings.baseUrl + encodeURIComponent(selectedText);
+                    window.open(url, '_blank');
+                }
+            });
+        } else {
+            showNotification('请先选择要搜索的文字', 'info');
+        }
+    }
+});
+
+// 统一的初始化入口
+async function initializeExtension() {
+    try {
+        createQuickActionButton();
+        await autoInitialize();
+    } catch (error) {
+        console.error('❌ 插件初始化失败:', error);
+    }
 }
 
-// 检测页面变化（对于单页应用）
+// 页面加载完成后自动初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeExtension);
+} else {
+    setTimeout(initializeExtension, 1000);
+}
+
+// 监听页面变化（对于单页应用）
 let lastUrl = window.location.href;
-new MutationObserver(() => {
+const urlObserver = new MutationObserver(() => {
     const currentUrl = window.location.href;
     if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
-        // 页面URL变化，重新创建按钮
-        setTimeout(createQuickActionButton, 1000);
+        console.log('🔄 页面URL变化，重新初始化...');
+        setTimeout(() => {
+            if (!autoProcessing) {
+                initializeExtension();
+            }
+        }, 2000);
     }
-}).observe(document, {subtree: true, childList: true});
+});
+
+urlObserver.observe(document, {subtree: true, childList: true});
+
+window.addEventListener('beforeunload', () => {
+    urlObserver.disconnect();
+    removeAllButtons();
+});
