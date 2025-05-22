@@ -9,6 +9,7 @@ let currentBridgeConfig = {
     baseUrl: 'https://kfcv50.link',
     name: 'KFC V50 API 一键对接'
 };
+let autoScanEnabled = false; // 控制是否开启自动扫描功能
 
 // ===========================================
 // 工具函数（必须在其他函数之前定义）
@@ -51,6 +52,54 @@ function getUserId() {
 
     console.log('⚠️ 无法自动获取用户ID，使用默认值256');
     return '256';
+}
+
+// 统一的API请求函数，确保所有请求都包含必要的请求头
+async function makeAPIRequest(url, options = {}) {
+    // 确保有用户ID
+    if (!currentUserId) {
+        currentUserId = getUserId();
+    }
+
+    // 构建默认请求头
+    const defaultHeaders = {
+        'accept': 'application/json, text/plain, */*',
+        'accept-language': 'zh-CN,zh;q=0.9',
+        'cache-control': 'no-store',
+        'new-api-user': currentUserId,  // 🔑 每个请求都必须有这个头
+        'pragma': 'no-cache',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin'
+    };
+
+    // 如果有access token且options中没有指定Authorization头，则添加
+    if (currentAccessToken && !options.headers?.Authorization) {
+        defaultHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
+    }
+
+    // 合并用户提供的headers
+    const headers = {
+        ...defaultHeaders,
+        ...(options.headers || {})
+    };
+
+    // 构建最终的请求选项
+    const requestOptions = {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'include',
+        ...options,
+        headers
+    };
+
+    console.log(`🌐 发送API请求到: ${url}`, {
+        method: requestOptions.method,
+        userId: currentUserId,
+        hasCustomAuth: !!options.headers?.Authorization
+    });
+
+    return fetch(url, requestOptions);
 }
 
 // 显示通知
@@ -126,27 +175,17 @@ async function fetchAccessToken(baseUrl) {
             console.log(`🆔 使用用户ID: ${currentUserId}`);
         }
 
-        const response = await fetch(`${baseUrl}/api/user/self`, {
+        // 使用统一的API请求函数
+        const response = await makeAPIRequest(`${baseUrl}/api/user/self`, {
             method: 'GET',
             headers: {
-                'accept': 'application/json, text/plain, */*',
-                'accept-language': 'zh-CN,zh;q=0.9',
-                'cache-control': 'no-store',
-                'new-api-user': currentUserId,
-                'pragma': 'no-cache',
                 'priority': 'u=1, i',
                 'sec-ch-ua': '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
                 'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"macOS"',
-                'sec-fetch-dest': 'empty',
-                'sec-fetch-mode': 'cors',
-                'sec-fetch-site': 'same-origin'
+                'sec-ch-ua-platform': '"macOS"'
             },
             referrer: `${baseUrl}/personal`,
-            referrerPolicy: 'strict-origin-when-cross-origin',
-            body: null,
-            mode: 'cors',
-            credentials: 'include'
+            referrerPolicy: 'strict-origin-when-cross-origin'
         });
 
         if (!response.ok) {
@@ -188,25 +227,8 @@ async function fetchAccessToken(baseUrl) {
 // 验证Access Token是否有效
 async function validateAccessToken() {
     try {
-        if (!currentUserId) {
-            currentUserId = getUserId();
-        }
-
-        const response = await fetch(`${window.location.origin}/api/user/self`, {
-            method: 'GET',
-            headers: {
-                'accept': 'application/json, text/plain, */*',
-                'accept-language': 'zh-CN,zh;q=0.9',
-                'cache-control': 'no-store',
-                'new-api-user': currentUserId,
-                'pragma': 'no-cache',
-                'sec-fetch-dest': 'empty',
-                'sec-fetch-mode': 'cors',
-                'sec-fetch-site': 'same-origin'
-            },
-            credentials: 'include'
-        });
-
+        // 使用统一的API请求函数
+        const response = await makeAPIRequest(`${window.location.origin}/api/user/self`);
         return response.ok;
     } catch (error) {
         return false;
@@ -344,14 +366,19 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
                 const cells = row.querySelectorAll('td, .semi-table-row-cell');
                 if (cells.length === 0) return;
 
-                let keyValue = '';
-                if (cells.length > 1 && cells[1]) {
-                    const textElement = cells[1].querySelector('[title]') || cells[1];
-                    keyValue = textElement.textContent?.trim() || textElement.getAttribute('title')?.trim() || '';
-                }
+                // 首先尝试获取表格行的data-row-key属性作为key值
+                let keyValue = row.getAttribute('data-row-key') || '';
+                
+                // 如果没有data-row-key，则尝试从单元格内容获取
+                if (!keyValue) {
+                    if (cells.length > 1 && cells[1]) {
+                        const textElement = cells[1].querySelector('[title]') || cells[1];
+                        keyValue = textElement.textContent?.trim() || textElement.getAttribute('title')?.trim() || '';
+                    }
 
-                if (!keyValue && cells[0]) {
-                    keyValue = cells[0].textContent?.trim() || '';
+                    if (!keyValue && cells[0]) {
+                        keyValue = cells[0].textContent?.trim() || '';
+                    }
                 }
 
                 if (!keyValue) {
@@ -375,7 +402,7 @@ function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
                 `;
 
                 const actionBtn = document.createElement('button');
-                actionBtn.textContent = '🔗 获取模型';
+                actionBtn.textContent = '🔗 一键对接';
                 actionBtn.className = `shellapi-action-btn-${Date.now()}-${rowIndex}`;
                 actionBtn.setAttribute('type', 'button');
                 actionBtn.style.cssText = `
@@ -452,25 +479,25 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
     const originalText = button.textContent;
 
     try {
-        if (!currentAccessToken) {
-            showNotification('请先获取Access Token', 'error');
-            return;
-        }
-
         button.textContent = '⏳ 获取中...';
         button.disabled = true;
         button.style.background = '#ffa726';
 
+        // 步骤1: 获取当前表格这一行的key，添加sk-前缀
+        const secretKey = `sk-${keyValue}`;
+        console.log(`📌 使用key值: ${keyValue}`);
+        console.log(`🔑 生成密钥: ${secretKey}`);
+        showNotification(`正在使用密钥获取模型列表...`, 'info');
+
+        // 构建API URL
         const apiUrl = `${window.location.protocol}//${window.location.host}/v1/models`;
+        console.log(`🌐 请求API: ${apiUrl}`);
 
-        showNotification(`正在请求: ${apiUrl}`, 'info');
-
-        const response = await fetch(apiUrl, {
+        // 使用统一的API请求函数，确保包含所有必要的请求头，并添加Authorization头
+        const response = await makeAPIRequest(apiUrl, {
             method: 'GET',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${currentAccessToken}`,
-                'accept': 'application/json, text/plain, */*'
+                'Authorization': `Bearer ${secretKey}`  // 使用sk-前缀的key作为Bearer Token
             }
         });
 
@@ -479,17 +506,60 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
         }
 
         const data = await response.json();
+        console.log('📊 API响应状态码:', response.status);
+        console.log('📊 API响应数据类型:', typeof data);
+        console.log('📊 API响应数据结构:', Object.keys(data).join(', '));
+        
+        if (data.data) {
+            console.log('📊 data.data类型:', typeof data.data);
+            console.log('📊 data.data是否数组:', Array.isArray(data.data));
+            console.log('📊 data.data长度:', data.data?.length || 0);
+            if (data.data[0]) {
+                console.log('📊 第一个模型结构:', Object.keys(data.data[0]).join(', '));
+                console.log('📊 第一个模型ID:', data.data[0].id);
+            }
+        }
+        
+        let modelList = [];
 
-        if (!data.success || !data.data || !Array.isArray(data.data)) {
-            throw new Error('API返回数据格式不正确');
+        // 处理不同的API返回格式
+        if (Array.isArray(data)) {
+            modelList = extractModelIds(data);
+        } else if (data.data && Array.isArray(data.data)) {
+            console.log('📋 解析data.data数组，包含', data.data.length, '个模型');
+            modelList = extractModelIds(data.data);
+        } else if (data.models && Array.isArray(data.models)) {
+            modelList = extractModelIds(data.models);
+        } else {
+            console.error('❌ 未知的API返回格式:', data);
+            throw new Error('API返回数据格式不正确，无法识别模型列表');
         }
 
-        const models = data.data.join(',');
-        const finalUrl = buildBridgeUrl(bridgeBaseUrl, bridgeName, models);
+        if (modelList.length === 0) {
+            throw new Error('未找到可用的模型');
+        }
 
+        // 步骤2: 解析请求，把可用模型用逗号拼起来
+        const models = modelList.join(',');
+        console.log(`✅ 成功获取 ${modelList.length} 个模型`);
+        console.log(`📋 模型列表: ${models}`);
+
+        // 步骤3: 拼接可用模型组成url
+        const params = new URLSearchParams({
+            name: bridgeName,
+            base_url: bridgeBaseUrl,
+            model: models,
+            billing_type: '4',
+            type: '7007'
+        });
+
+        const finalUrl = `${bridgeBaseUrl}/channel/bridge?${params.toString()}`;
+        console.log(`🔗 生成的URL: ${finalUrl}`);
+
+        // 打开URL
         window.open(finalUrl, '_blank');
 
-        showNotification(`成功获取 ${data.data.length} 个模型，正在跳转...`, 'success');
+        showNotification(`成功获取 ${modelList.length} 个模型，正在跳转...`, 'success');
 
         button.textContent = '✅ 完成';
         button.style.background = '#4CAF50';
@@ -501,6 +571,7 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
 
     } catch (error) {
         showNotification(`操作失败: ${error.message}`, 'error');
+        console.error('❌ 获取模型失败:', error);
 
         button.textContent = '❌ 失败';
         button.style.background = '#f44336';
@@ -513,17 +584,36 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
     }
 }
 
-// 构建桥接URL
-function buildBridgeUrl(bridgeBaseUrl, bridgeName, models) {
-    const params = new URLSearchParams({
-        name: bridgeName,
-        base_url: bridgeBaseUrl,
-        model: models,
-        billing_type: '4',
-        type: '7007'
+// 从模型对象数组中提取模型ID
+function extractModelIds(models) {
+    if (!Array.isArray(models) || models.length === 0) return [];
+    
+    // 打印第一个模型对象结构，便于调试
+    if (models[0]) {
+        console.log('模型对象示例:', models[0]);
+    }
+    
+    // 专门针对API返回的格式提取id字段
+    const modelIds = models.map(model => {
+        // 如果模型是对象并且有id字段，直接返回id
+        if (model && typeof model === 'object' && model.id) {
+            return model.id;
+        }
+        
+        // 如果模型本身就是字符串，直接返回
+        if (typeof model === 'string') return model;
+        
+        // 兜底处理：尝试其他可能的字段
+        if (model.model) return model.model;
+        if (model.model_id) return model.model_id;
+        if (model.name) return model.name;
+        
+        // 实在找不到就返回未知模型
+        return 'unknown_model';
     });
-
-    return `${bridgeBaseUrl}/channel/bridge?${params.toString()}`;
+    
+    console.log('提取的模型ID列表:', modelIds);
+    return modelIds;
 }
 
 // 移除所有添加的按钮
@@ -601,6 +691,106 @@ function createQuickActionButton() {
     });
 
     document.body.appendChild(quickBtn);
+    
+    // 添加控制面板
+    createControlPanel();
+}
+
+// 创建控制面板
+function createControlPanel() {
+    const existingPanel = document.getElementById('shellapi-control-panel');
+    if (existingPanel) {
+        return;
+    }
+
+    const panel = document.createElement('div');
+    panel.id = 'shellapi-control-panel';
+    panel.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: white;
+        border-radius: 8px;
+        padding: 12px;
+        z-index: 10000;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 180px;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        border: 1px solid #ddd;
+    `;
+
+    const title = document.createElement('div');
+    title.textContent = 'ShellAPI Bridge';
+    title.style.cssText = `
+        font-weight: bold;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #eee;
+        margin-bottom: 8px;
+        font-size: 16px;
+        color: #333;
+    `;
+    panel.appendChild(title);
+
+    // 添加"一键对接"按钮
+    const scanBtn = document.createElement('button');
+    scanBtn.textContent = '一键对接';
+    scanBtn.style.cssText = `
+        background: #4CAF50;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    `;
+    scanBtn.addEventListener('mouseenter', () => {
+        scanBtn.style.background = '#45a049';
+    });
+    scanBtn.addEventListener('mouseleave', () => {
+        scanBtn.style.background = '#4CAF50';
+    });
+    scanBtn.addEventListener('click', async () => {
+        if (!autoProcessing) {
+            autoScanEnabled = true;
+            showNotification('🔄 开始扫描表格...', 'info');
+            await autoInitialize();
+        } else {
+            showNotification('⚠️ 正在处理中，请稍候...', 'info');
+        }
+    });
+    panel.appendChild(scanBtn);
+
+    // 添加"清除按钮"按钮
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = '清除按钮';
+    clearBtn.style.cssText = `
+        background: #f44336;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    `;
+    clearBtn.addEventListener('mouseenter', () => {
+        clearBtn.style.background = '#d32f2f';
+    });
+    clearBtn.addEventListener('mouseleave', () => {
+        clearBtn.style.background = '#f44336';
+    });
+    clearBtn.addEventListener('click', () => {
+        const removedCount = removeAllButtons();
+        showNotification(`已清除 ${removedCount} 个按钮`, 'success');
+    });
+    panel.appendChild(clearBtn);
+
+    document.body.appendChild(panel);
 }
 
 // 执行快速操作
@@ -627,7 +817,7 @@ async function autoInitialize() {
     autoProcessing = true;
 
     try {
-        console.log('🚀 开始自动初始化...');
+        console.log('🚀 开始初始化...');
 
         await loadStoredConfig();
 
@@ -639,13 +829,18 @@ async function autoInitialize() {
         }
 
         await waitForPageReady();
-        await autoScanAndAddButtons();
+        
+        // 只有在启用自动扫描时才扫描并添加按钮
+        if (autoScanEnabled) {
+            await autoScanAndAddButtons();
+            autoScanEnabled = false; // 完成后重置标志
+        }
 
-        console.log('✅ 自动初始化完成');
+        console.log('✅ 初始化完成');
 
     } catch (error) {
-        console.error('❌ 自动初始化失败:', error);
-        showNotification('自动初始化失败: ' + error.message, 'error');
+        console.error('❌ 初始化失败:', error);
+        showNotification('初始化失败: ' + error.message, 'error');
     } finally {
         autoProcessing = false;
     }
@@ -754,7 +949,7 @@ document.addEventListener('keydown', (e) => {
 async function initializeExtension() {
     try {
         createQuickActionButton();
-        await autoInitialize();
+        await loadStoredConfig(); // 只加载配置，不自动扫描
     } catch (error) {
         console.error('❌ 插件初始化失败:', error);
     }
