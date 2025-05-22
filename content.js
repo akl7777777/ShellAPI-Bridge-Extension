@@ -21,7 +21,7 @@ function getUserId() {
         const userStr = localStorage.getItem('user');
         if (userStr) {
             const user = JSON.parse(userStr);
-            if (user.id) {
+            if (user && user.id) {
                 console.log(`✅ 从localStorage获取到用户ID: ${user.id}`);
                 return user.id.toString();
             }
@@ -34,12 +34,14 @@ function getUserId() {
         const userInfo = localStorage.getItem('userInfo');
         if (userInfo) {
             const user = JSON.parse(userInfo);
-            if (user.id) {
+            if (user && user.id) {
                 console.log(`✅ 从localStorage userInfo获取到用户ID: ${user.id}`);
                 return user.id.toString();
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        console.log('解析localStorage userInfo失败:', e);
+    }
 
     console.log('⚠️ 无法自动获取用户ID，使用默认值256');
     return '256';
@@ -47,109 +49,118 @@ function getUserId() {
 
 // 统一的API请求函数，确保所有请求都包含必要的请求头
 async function makeAPIRequest(url, options = {}) {
-    // 确保有用户ID
-    if (!currentUserId) {
-        currentUserId = getUserId();
+    try {
+        // 确保有用户ID
+        if (!currentUserId) {
+            currentUserId = getUserId();
+        }
+
+        // 构建默认请求头
+        const defaultHeaders = {
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'zh-CN,zh;q=0.9',
+            'cache-control': 'no-store',
+            'new-api-user': currentUserId,  // 🔑 每个请求都必须有这个头
+            'pragma': 'no-cache',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin'
+        };
+
+        // 如果有access token且options中没有指定Authorization头，则添加
+        if (currentAccessToken && !options.headers?.Authorization) {
+            defaultHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
+        }
+
+        // 合并用户提供的headers
+        const headers = {
+            ...defaultHeaders,
+            ...(options.headers || {})
+        };
+
+        // 构建最终的请求选项
+        const requestOptions = {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'include',
+            ...options,
+            headers
+        };
+
+        console.log(`🌐 发送API请求到: ${url}`, {
+            method: requestOptions.method,
+            userId: currentUserId,
+            hasCustomAuth: !!options.headers?.Authorization
+        });
+
+        return fetch(url, requestOptions);
+    } catch (error) {
+        console.error('❌ API请求预处理失败:', error);
+        throw error;
     }
-
-    // 构建默认请求头
-    const defaultHeaders = {
-        'accept': 'application/json, text/plain, */*',
-        'accept-language': 'zh-CN,zh;q=0.9',
-        'cache-control': 'no-store',
-        'new-api-user': currentUserId,  // 🔑 每个请求都必须有这个头
-        'pragma': 'no-cache',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin'
-    };
-
-    // 如果有access token且options中没有指定Authorization头，则添加
-    if (currentAccessToken && !options.headers?.Authorization) {
-        defaultHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
-    }
-
-    // 合并用户提供的headers
-    const headers = {
-        ...defaultHeaders,
-        ...(options.headers || {})
-    };
-
-    // 构建最终的请求选项
-    const requestOptions = {
-        method: 'GET',
-        mode: 'cors',
-        credentials: 'include',
-        ...options,
-        headers
-    };
-
-    console.log(`🌐 发送API请求到: ${url}`, {
-        method: requestOptions.method,
-        userId: currentUserId,
-        hasCustomAuth: !!options.headers?.Authorization
-    });
-
-    return fetch(url, requestOptions);
 }
 
 // 显示通知
 function showNotification(message, type) {
-    const existingNotification = document.getElementById('shellapi-notification');
-    if (existingNotification) {
-        existingNotification.remove();
-    }
+    try {
+        const existingNotification = document.getElementById('shellapi-notification');
+        if (existingNotification) {
+            existingNotification.remove();
+        }
 
-    const notification = document.createElement('div');
-    notification.id = 'shellapi-notification';
+        const notification = document.createElement('div');
+        notification.id = 'shellapi-notification';
 
-    const bgColor = type === 'success' ? '#4CAF50' :
-        type === 'error' ? '#f44336' : '#2196F3';
+        const bgColor = type === 'success' ? '#4CAF50' :
+            type === 'error' ? '#f44336' : '#2196F3';
 
-    notification.style.cssText = `
-        position: fixed;
-        top: 80px;
-        right: 20px;
-        background: ${bgColor};
-        color: white;
-        padding: 15px 20px;
-        border-radius: 5px;
-        z-index: 10001;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-        max-width: 300px;
-        word-wrap: break-word;
-        animation: slideIn 0.3s ease;
-    `;
-
-    if (!document.getElementById('shellapi-styles')) {
-        const style = document.createElement('style');
-        style.id = 'shellapi-styles';
-        style.textContent = `
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-            @keyframes slideOut {
-                from { transform: translateX(0); opacity: 1; }
-                to { transform: translateX(100%); opacity: 0; }
-            }
+        notification.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: ${bgColor};
+            color: white;
+            padding: 15px 20px;
+            border-radius: 5px;
+            z-index: 10001;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            max-width: 300px;
+            word-wrap: break-word;
+            animation: slideIn 0.3s ease;
         `;
-        document.head.appendChild(style);
-    }
 
-    notification.textContent = message;
-    document.body.appendChild(notification);
+        if (!document.getElementById('shellapi-styles')) {
+            const style = document.createElement('style');
+            style.id = 'shellapi-styles';
+            style.textContent = `
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes slideOut {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(100%); opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
 
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease';
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
         setTimeout(() => {
-            if (notification.parentNode) {
-                notification.remove();
-            }
-        }, 300);
-    }, 3000);
+            notification.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 300);
+        }, 3000);
+    } catch (error) {
+        console.error('❌ 显示通知失败:', error);
+    }
 }
 
 // ===========================================
@@ -185,8 +196,9 @@ async function fetchAccessToken(baseUrl) {
         }
 
         const data = await response.json();
+        console.log('获取到的API响应:', data);
 
-        if (!data.success || !data.data || !data.data.access_token) {
+        if (!data.data || !data.data.access_token) {
             throw new Error('API返回数据格式不正确或未找到access_token');
         }
 
@@ -220,23 +232,28 @@ async function fetchAccessToken(baseUrl) {
 // 加载存储的配置
 async function loadStoredConfig() {
     return new Promise((resolve) => {
-        currentUserId = getUserId();
+        try {
+            currentUserId = getUserId();
 
-        chrome.storage.sync.get(['settings'], (result) => {
-            if (result.settings) {
-                if (result.settings.bridgeBaseUrl) {
-                    currentBridgeConfig.baseUrl = result.settings.bridgeBaseUrl;
+            chrome.storage.sync.get(['settings'], (result) => {
+                if (result.settings) {
+                    if (result.settings.bridgeBaseUrl) {
+                        currentBridgeConfig.baseUrl = result.settings.bridgeBaseUrl;
+                    }
+                    if (result.settings.bridgeName) {
+                        currentBridgeConfig.name = result.settings.bridgeName;
+                    }
+                    if (result.settings.accessToken) {
+                        currentAccessToken = result.settings.accessToken;
+                    }
+                    console.log('📦 已加载存储的配置');
                 }
-                if (result.settings.bridgeName) {
-                    currentBridgeConfig.name = result.settings.bridgeName;
-                }
-                if (result.settings.accessToken) {
-                    currentAccessToken = result.settings.accessToken;
-                }
-                console.log('📦 已加载存储的配置');
-            }
-            resolve();
-        });
+                resolve();
+            });
+        } catch (error) {
+            console.error('❌ 加载配置失败:', error);
+            resolve(); // 即使失败也继续执行
+        }
     });
 }
 
@@ -247,15 +264,20 @@ async function waitForPageReady() {
         const maxAttempts = 20;
 
         const checkReady = () => {
-            const tables = document.querySelectorAll('table, .semi-table');
-            const dataRows = document.querySelectorAll('tbody tr, .semi-table-tbody tr');
+            try {
+                const tables = document.querySelectorAll('table, .semi-table');
+                const dataRows = document.querySelectorAll('tbody tr, .semi-table-tbody tr');
 
-            if (dataRows.length > 0 || attempts >= maxAttempts) {
-                console.log(`📋 页面准备就绪，发现 ${dataRows.length} 行数据`);
-                resolve();
-            } else {
-                attempts++;
-                setTimeout(checkReady, 500);
+                if (dataRows.length > 0 || attempts >= maxAttempts) {
+                    console.log(`📋 页面准备就绪，发现 ${dataRows.length} 行数据`);
+                    resolve();
+                } else {
+                    attempts++;
+                    setTimeout(checkReady, 500);
+                }
+            } catch (error) {
+                console.error('❌ 检查页面就绪状态失败:', error);
+                resolve(); // 即使失败也继续执行
             }
         };
 
@@ -265,124 +287,137 @@ async function waitForPageReady() {
 
 // 扫描表格并添加操作按钮
 function scanTablesAndAddButtons(bridgeBaseUrl, bridgeName) {
-    const tables = document.querySelectorAll('table, .semi-table');
-    let tableCount = 0;
-    let buttonCount = 0;
+    try {
+        const tables = document.querySelectorAll('table, .semi-table');
+        let tableCount = 0;
+        let buttonCount = 0;
 
-    tables.forEach((table, tableIndex) => {
-        const headerRows = table.querySelectorAll('thead tr, .semi-table-thead tr');
-        const dataRows = table.querySelectorAll('tbody tr, .semi-table-tbody tr');
+        tables.forEach((table, tableIndex) => {
+            const headerRows = table.querySelectorAll('thead tr, .semi-table-thead tr');
+            const dataRows = table.querySelectorAll('tbody tr, .semi-table-tbody tr');
 
-        if (dataRows.length > 0) {
-            tableCount++;
+            if (dataRows.length > 0) {
+                tableCount++;
 
-            headerRows.forEach(headerRow => {
-                const headerCell = document.createElement('th');
-                headerCell.textContent = 'API操作';
-                headerCell.className = 'shellapi-header-cell';
-                headerCell.setAttribute('role', 'columnheader');
-                headerCell.style.cssText = `
-                    background: #e8f5e8;
-                    padding: 12px 8px;
-                    border: 1px solid #ddd;
-                    font-weight: bold;
-                    text-align: center;
-                    color: #2e7d32;
-                    min-width: 120px;
-                    font-size: 14px;
-                `;
-                headerRow.appendChild(headerCell);
-            });
-
-            dataRows.forEach((row, rowIndex) => {
-                const cells = row.querySelectorAll('td, .semi-table-row-cell');
-                if (cells.length === 0) return;
-
-                // 首先尝试获取表格行的data-row-key属性作为key值
-                let keyValue = row.getAttribute('data-row-key') || '';
-                
-                // 如果没有data-row-key，则尝试从单元格内容获取
-                if (!keyValue) {
-                    if (cells.length > 1 && cells[1]) {
-                        const textElement = cells[1].querySelector('[title]') || cells[1];
-                        keyValue = textElement.textContent?.trim() || textElement.getAttribute('title')?.trim() || '';
+                headerRows.forEach(headerRow => {
+                    try {
+                        const headerCell = document.createElement('th');
+                        headerCell.textContent = 'API操作';
+                        headerCell.className = 'shellapi-header-cell';
+                        headerCell.setAttribute('role', 'columnheader');
+                        headerCell.style.cssText = `
+                            background: #e8f5e8;
+                            padding: 12px 8px;
+                            border: 1px solid #ddd;
+                            font-weight: bold;
+                            text-align: center;
+                            color: #2e7d32;
+                            min-width: 120px;
+                            font-size: 14px;
+                        `;
+                        headerRow.appendChild(headerCell);
+                    } catch (error) {
+                        console.error('❌ 添加表头失败:', error);
                     }
+                });
 
-                    if (!keyValue && cells[0]) {
-                        keyValue = cells[0].textContent?.trim() || '';
+                dataRows.forEach((row, rowIndex) => {
+                    try {
+                        const cells = row.querySelectorAll('td, .semi-table-row-cell');
+                        if (cells.length === 0) return;
+
+                        // 首先尝试获取表格行的data-row-key属性作为key值
+                        let keyValue = row.getAttribute('data-row-key') || '';
+                        
+                        // 如果没有data-row-key，则尝试从单元格内容获取
+                        if (!keyValue) {
+                            if (cells.length > 1 && cells[1]) {
+                                const textElement = cells[1].querySelector('[title]') || cells[1];
+                                keyValue = textElement.textContent?.trim() || textElement.getAttribute('title')?.trim() || '';
+                            }
+
+                            if (!keyValue && cells[0]) {
+                                keyValue = cells[0].textContent?.trim() || '';
+                            }
+                        }
+
+                        if (!keyValue) {
+                            console.log('未找到key值，跳过行:', rowIndex);
+                            return;
+                        }
+
+                        console.log(`为行 ${rowIndex} 添加按钮，key值: ${keyValue}`);
+
+                        const actionCell = document.createElement('td');
+                        actionCell.className = `shellapi-action-cell-${Date.now()}-${rowIndex} semi-table-row-cell`;
+                        actionCell.setAttribute('role', 'gridcell');
+                        actionCell.setAttribute('aria-colindex', cells.length + 1);
+                        actionCell.style.cssText = `
+                            padding: 8px;
+                            border: 1px solid #ddd;
+                            text-align: center;
+                            background: #fafafa;
+                            min-width: 120px;
+                            vertical-align: middle;
+                        `;
+
+                        const actionBtn = document.createElement('button');
+                        actionBtn.textContent = '🔗 一键对接';
+                        actionBtn.className = `shellapi-action-btn-${Date.now()}-${rowIndex}`;
+                        actionBtn.setAttribute('type', 'button');
+                        actionBtn.style.cssText = `
+                            background: #4CAF50;
+                            color: white;
+                            border: none;
+                            padding: 8px 12px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 12px;
+                            font-weight: 500;
+                            transition: all 0.3s ease;
+                            box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+                            white-space: nowrap;
+                        `;
+
+                        actionBtn.addEventListener('mouseenter', () => {
+                            actionBtn.style.background = '#45a049';
+                            actionBtn.style.transform = 'translateY(-1px)';
+                            actionBtn.style.boxShadow = '0 4px 8px rgba(76, 175, 80, 0.4)';
+                        });
+
+                        actionBtn.addEventListener('mouseleave', () => {
+                            actionBtn.style.background = '#4CAF50';
+                            actionBtn.style.transform = 'translateY(0)';
+                            actionBtn.style.boxShadow = '0 2px 4px rgba(76, 175, 80, 0.3)';
+                        });
+
+                        actionBtn.addEventListener('click', async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            await handleRowAction(keyValue, bridgeBaseUrl, bridgeName, actionBtn);
+                        });
+
+                        actionCell.appendChild(actionBtn);
+                        row.appendChild(actionCell);
+
+                        tableButtons.push({
+                            button: actionBtn,
+                            cell: actionCell,
+                            keyValue: keyValue
+                        });
+                        buttonCount++;
+                    } catch (error) {
+                        console.error(`❌ 为行 ${rowIndex} 添加按钮失败:`, error);
                     }
-                }
-
-                if (!keyValue) {
-                    console.log('未找到key值，跳过行:', rowIndex);
-                    return;
-                }
-
-                console.log(`为行 ${rowIndex} 添加按钮，key值: ${keyValue}`);
-
-                const actionCell = document.createElement('td');
-                actionCell.className = `shellapi-action-cell-${Date.now()}-${rowIndex} semi-table-row-cell`;
-                actionCell.setAttribute('role', 'gridcell');
-                actionCell.setAttribute('aria-colindex', cells.length + 1);
-                actionCell.style.cssText = `
-                    padding: 8px;
-                    border: 1px solid #ddd;
-                    text-align: center;
-                    background: #fafafa;
-                    min-width: 120px;
-                    vertical-align: middle;
-                `;
-
-                const actionBtn = document.createElement('button');
-                actionBtn.textContent = '🔗 一键对接';
-                actionBtn.className = `shellapi-action-btn-${Date.now()}-${rowIndex}`;
-                actionBtn.setAttribute('type', 'button');
-                actionBtn.style.cssText = `
-                    background: #4CAF50;
-                    color: white;
-                    border: none;
-                    padding: 8px 12px;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 12px;
-                    font-weight: 500;
-                    transition: all 0.3s ease;
-                    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
-                    white-space: nowrap;
-                `;
-
-                actionBtn.addEventListener('mouseenter', () => {
-                    actionBtn.style.background = '#45a049';
-                    actionBtn.style.transform = 'translateY(-1px)';
-                    actionBtn.style.boxShadow = '0 4px 8px rgba(76, 175, 80, 0.4)';
                 });
+            }
+        });
 
-                actionBtn.addEventListener('mouseleave', () => {
-                    actionBtn.style.background = '#4CAF50';
-                    actionBtn.style.transform = 'translateY(0)';
-                    actionBtn.style.boxShadow = '0 2px 4px rgba(76, 175, 80, 0.3)';
-                });
-
-                actionBtn.addEventListener('click', async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    await handleRowAction(keyValue, bridgeBaseUrl, bridgeName, actionBtn);
-                });
-
-                actionCell.appendChild(actionBtn);
-                row.appendChild(actionCell);
-
-                tableButtons.push({
-                    button: actionBtn,
-                    cell: actionCell,
-                    keyValue: keyValue
-                });
-                buttonCount++;
-            });
-        }
-    });
-
-    return { tableCount, buttonCount };
+        return { tableCount, buttonCount };
+    } catch (error) {
+        console.error('❌ 扫描表格失败:', error);
+        throw error;
+    }
 }
 
 // 自动扫描并添加按钮
@@ -397,11 +432,13 @@ async function autoScanAndAddButtons() {
             showNotification(`自动扫描完成：添加了 ${result.buttonCount} 个API操作按钮`, 'success');
         } else {
             console.log('ℹ️ 未找到合适的表格行');
+            showNotification('未找到合适的表格数据', 'info');
         }
 
         return result;
     } catch (error) {
         console.error('❌ 自动扫描失败:', error);
+        showNotification('自动扫描失败: ' + error.message, 'error');
         throw error;
     }
 }
@@ -527,21 +564,26 @@ function extractModelIds(models) {
     
     // 专门针对API返回的格式提取id字段
     const modelIds = models.map(model => {
-        // 如果模型是对象并且有id字段，直接返回id
-        if (model && typeof model === 'object' && model.id) {
-            return model.id;
+        try {
+            // 如果模型是对象并且有id字段，直接返回id
+            if (model && typeof model === 'object' && model.id) {
+                return model.id;
+            }
+            
+            // 如果模型本身就是字符串，直接返回
+            if (typeof model === 'string') return model;
+            
+            // 兜底处理：尝试其他可能的字段
+            if (model.model) return model.model;
+            if (model.model_id) return model.model_id;
+            if (model.name) return model.name;
+            
+            // 实在找不到就返回未知模型
+            return 'unknown_model';
+        } catch (error) {
+            console.error('❌ 提取模型ID失败:', error);
+            return 'error_model';
         }
-        
-        // 如果模型本身就是字符串，直接返回
-        if (typeof model === 'string') return model;
-        
-        // 兜底处理：尝试其他可能的字段
-        if (model.model) return model.model;
-        if (model.model_id) return model.model_id;
-        if (model.name) return model.name;
-        
-        // 实在找不到就返回未知模型
-        return 'unknown_model';
     });
     
     console.log('提取的模型ID列表:', modelIds);
@@ -550,129 +592,138 @@ function extractModelIds(models) {
 
 // 移除所有添加的按钮
 function removeAllButtons() {
-    let removedCount = 0;
+    try {
+        let removedCount = 0;
 
-    tableButtons.forEach(item => {
-        if (item.cell && item.cell.parentNode) {
-            item.cell.remove();
-            removedCount++;
-        }
-    });
+        tableButtons.forEach(item => {
+            if (item.cell && item.cell.parentNode) {
+                item.cell.remove();
+                removedCount++;
+            }
+        });
 
-    document.querySelectorAll('.shellapi-header-cell').forEach(th => {
-        if (th.parentNode) {
-            th.remove();
-        }
-    });
+        document.querySelectorAll('.shellapi-header-cell').forEach(th => {
+            if (th.parentNode) {
+                th.remove();
+            }
+        });
 
-    document.querySelectorAll('[class*="shellapi-action-"]').forEach(element => {
-        if (element.parentNode) {
-            element.remove();
-            removedCount++;
-        }
-    });
+        document.querySelectorAll('[class*="shellapi-action-"]').forEach(element => {
+            if (element.parentNode) {
+                element.remove();
+                removedCount++;
+            }
+        });
 
-    tableButtons = [];
+        tableButtons = [];
 
-    console.log(`🧹 清理了 ${removedCount} 个元素`);
-    return removedCount;
+        console.log(`🧹 清理了 ${removedCount} 个元素`);
+        return removedCount;
+    } catch (error) {
+        console.error('❌ 移除按钮失败:', error);
+        return 0;
+    }
 }
 
 // 创建控制面板
 function createControlPanel() {
-    const existingPanel = document.getElementById('shellapi-control-panel');
-    if (existingPanel) {
-        return;
-    }
-
-    const panel = document.createElement('div');
-    panel.id = 'shellapi-control-panel';
-    panel.style.cssText = `
-        position: fixed;
-        top: 80px;
-        right: 20px;
-        background: white;
-        border-radius: 8px;
-        padding: 12px;
-        z-index: 10000;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        min-width: 180px;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        border: 1px solid #ddd;
-    `;
-
-    const title = document.createElement('div');
-    title.textContent = 'ShellAPI Bridge';
-    title.style.cssText = `
-        font-weight: bold;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #eee;
-        margin-bottom: 8px;
-        font-size: 16px;
-        color: #333;
-    `;
-    panel.appendChild(title);
-
-    // 添加"一键对接"按钮
-    const scanBtn = document.createElement('button');
-    scanBtn.textContent = '一键对接';
-    scanBtn.style.cssText = `
-        background: #4CAF50;
-        color: white;
-        border: none;
-        padding: 8px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 500;
-        transition: all 0.2s ease;
-    `;
-    scanBtn.addEventListener('mouseenter', () => {
-        scanBtn.style.background = '#45a049';
-    });
-    scanBtn.addEventListener('mouseleave', () => {
-        scanBtn.style.background = '#4CAF50';
-    });
-    scanBtn.addEventListener('click', async () => {
-        if (!autoProcessing) {
-            autoScanEnabled = true;
-            showNotification('🔄 开始扫描表格...', 'info');
-            await autoInitialize();
-        } else {
-            showNotification('⚠️ 正在处理中，请稍候...', 'info');
+    try {
+        const existingPanel = document.getElementById('shellapi-control-panel');
+        if (existingPanel) {
+            return;
         }
-    });
-    panel.appendChild(scanBtn);
 
-    // 添加"清除按钮"按钮
-    const clearBtn = document.createElement('button');
-    clearBtn.textContent = '清除按钮';
-    clearBtn.style.cssText = `
-        background: #f44336;
-        color: white;
-        border: none;
-        padding: 8px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 500;
-        transition: all 0.2s ease;
-    `;
-    clearBtn.addEventListener('mouseenter', () => {
-        clearBtn.style.background = '#d32f2f';
-    });
-    clearBtn.addEventListener('mouseleave', () => {
-        clearBtn.style.background = '#f44336';
-    });
-    clearBtn.addEventListener('click', () => {
-        const removedCount = removeAllButtons();
-        showNotification(`已清除 ${removedCount} 个按钮`, 'success');
-    });
-    panel.appendChild(clearBtn);
+        const panel = document.createElement('div');
+        panel.id = 'shellapi-control-panel';
+        panel.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: white;
+            border-radius: 8px;
+            padding: 12px;
+            z-index: 10000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 180px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            border: 1px solid #ddd;
+        `;
 
-    document.body.appendChild(panel);
+        const title = document.createElement('div');
+        title.textContent = 'ShellAPI Bridge';
+        title.style.cssText = `
+            font-weight: bold;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 8px;
+            font-size: 16px;
+            color: #333;
+        `;
+        panel.appendChild(title);
+
+        // 添加"一键对接"按钮
+        const scanBtn = document.createElement('button');
+        scanBtn.textContent = '一键对接';
+        scanBtn.style.cssText = `
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        `;
+        scanBtn.addEventListener('mouseenter', () => {
+            scanBtn.style.background = '#45a049';
+        });
+        scanBtn.addEventListener('mouseleave', () => {
+            scanBtn.style.background = '#4CAF50';
+        });
+        scanBtn.addEventListener('click', async () => {
+            if (!autoProcessing) {
+                autoScanEnabled = true;
+                showNotification('🔄 开始扫描表格...', 'info');
+                await autoInitialize();
+            } else {
+                showNotification('⚠️ 正在处理中，请稍候...', 'info');
+            }
+        });
+        panel.appendChild(scanBtn);
+
+        // 添加"清除按钮"按钮
+        const clearBtn = document.createElement('button');
+        clearBtn.textContent = '清除按钮';
+        clearBtn.style.cssText = `
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        `;
+        clearBtn.addEventListener('mouseenter', () => {
+            clearBtn.style.background = '#d32f2f';
+        });
+        clearBtn.addEventListener('mouseleave', () => {
+            clearBtn.style.background = '#f44336';
+        });
+        clearBtn.addEventListener('click', () => {
+            const removedCount = removeAllButtons();
+            showNotification(`已清除 ${removedCount} 个按钮`, 'success');
+        });
+        panel.appendChild(clearBtn);
+
+        document.body.appendChild(panel);
+    } catch (error) {
+        console.error('❌ 创建控制面板失败:', error);
+    }
 }
 
 // ===========================================
@@ -713,6 +764,12 @@ async function autoInitialize() {
 
 // 监听来自popup或background的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // 添加ping响应，用于检查内容脚本是否已注入
+    if (request.action === 'ping') {
+        sendResponse({success: true, message: 'ShellAPI Bridge内容脚本已加载'});
+        return true;
+    }
+
     if (request.action === 'fetchAccessToken') {
         fetchAccessToken(request.baseUrl)
             .then(result => {
@@ -772,14 +829,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'showNotification') {
         showNotification(request.message, request.type);
         sendResponse({success: true});
+        return true;
     }
+    
+    // 默认返回，避免未处理的消息
+    sendResponse({success: false, error: '未知的操作'});
+    return true;
 });
 
 // 统一的初始化入口
 async function initializeExtension() {
     try {
+        console.log('🔄 初始化ShellAPI Bridge扩展...');
         createControlPanel();
         await loadStoredConfig(); // 只加载配置，不自动扫描
+        console.log('✅ 扩展初始化完成');
     } catch (error) {
         console.error('❌ 插件初始化失败:', error);
     }

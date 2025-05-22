@@ -17,28 +17,53 @@ document.addEventListener('DOMContentLoaded', function() {
     // 获取Access Token
     fetchTokenBtn.addEventListener('click', function() {
         chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-            const currentUrl = tabs[0].url;
-            const baseUrl = new URL(currentUrl).origin;
+            if (!tabs || tabs.length === 0) {
+                showTokenStatus('无法获取当前标签页信息', 'error');
+                return;
+            }
+            
+            const currentTab = tabs[0];
+            try {
+                const currentUrl = currentTab.url;
+                const baseUrl = new URL(currentUrl).origin;
+                
+                showTokenStatus('正在从当前页面获取Access Token...', 'info');
+                
+                // 先检查内容脚本是否已注入
+                chrome.tabs.sendMessage(currentTab.id, { action: 'ping' }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        // 内容脚本未注入，显示错误
+                        showTokenStatus('无法连接到页面。请确保你正在访问ShellAPI网站，且插件有权限访问。', 'error');
+                        return;
+                    }
+                    
+                    // 内容脚本已注入，发送获取Token请求
+                    chrome.tabs.sendMessage(currentTab.id, {
+                        action: 'fetchAccessToken',
+                        baseUrl: baseUrl
+                    }, function(response) {
+                        if (chrome.runtime.lastError) {
+                            showTokenStatus('与页面通信失败：' + chrome.runtime.lastError.message, 'error');
+                            return;
+                        }
+                        
+                        if (response && response.success) {
+                            accessTokenInput.value = response.accessToken;
+                            showTokenStatus('Access Token获取成功！此操作不会刷新现有Token', 'success');
 
-            showTokenStatus('正在从当前页面获取Access Token...', 'info');
-
-            chrome.tabs.sendMessage(tabs[0].id, {
-                action: 'fetchAccessToken',
-                baseUrl: baseUrl
-            }, function(response) {
-                if (response && response.success) {
-                    accessTokenInput.value = response.accessToken;
-                    showTokenStatus('Access Token获取成功！此操作不会刷新现有Token', 'success');
-
-                    // 保存token到存储
-                    chrome.storage.sync.set({
-                        accessToken: response.accessToken,
-                        tokenBaseUrl: baseUrl
+                            // 保存token到存储
+                            chrome.storage.sync.set({
+                                accessToken: response.accessToken,
+                                tokenBaseUrl: baseUrl
+                            });
+                        } else {
+                            showTokenStatus('获取Access Token失败：' + (response?.error || '未知错误') + '。请确保在已登录的ShellAPI页面使用。', 'error');
+                        }
                     });
-                } else {
-                    showTokenStatus('获取Access Token失败：' + (response?.error || '未知错误') + '。请确保在已登录的ShellAPI页面使用。', 'error');
-                }
-            });
+                });
+            } catch (error) {
+                showTokenStatus('URL解析错误：' + error.message, 'error');
+            }
         });
     });
 
@@ -53,16 +78,36 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-            chrome.tabs.sendMessage(tabs[0].id, {
-                action: 'scanTables',
-                bridgeBaseUrl: bridgeBaseUrl,
-                bridgeName: bridgeName
-            }, function(response) {
-                if (response && response.success) {
-                    showTableStatus(`已扫描到 ${response.tableCount} 个表格，添加了 ${response.buttonCount} 个按钮`, 'success');
-                } else {
-                    showTableStatus('扫描表格失败：' + (response?.error || '未知错误'), 'error');
+            if (!tabs || tabs.length === 0) {
+                showTableStatus('无法获取当前标签页信息', 'error');
+                return;
+            }
+            
+            // 先检查内容脚本是否已注入
+            chrome.tabs.sendMessage(tabs[0].id, { action: 'ping' }, function(response) {
+                if (chrome.runtime.lastError) {
+                    // 内容脚本未注入，显示错误
+                    showTableStatus('无法连接到页面。请确保你正在访问包含表格的网站。', 'error');
+                    return;
                 }
+                
+                // 内容脚本已注入，发送扫描表格请求
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    action: 'scanTables',
+                    bridgeBaseUrl: bridgeBaseUrl,
+                    bridgeName: bridgeName
+                }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        showTableStatus('与页面通信失败：' + chrome.runtime.lastError.message, 'error');
+                        return;
+                    }
+                    
+                    if (response && response.success) {
+                        showTableStatus(`已扫描到 ${response.tableCount} 个表格，添加了 ${response.buttonCount} 个按钮`, 'success');
+                    } else {
+                        showTableStatus('扫描表格失败：' + (response?.error || '未知错误'), 'error');
+                    }
+                });
             });
         });
     });
@@ -70,14 +115,34 @@ document.addEventListener('DOMContentLoaded', function() {
     // 移除所有按钮
     removeBtnsBtn.addEventListener('click', function() {
         chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-            chrome.tabs.sendMessage(tabs[0].id, {
-                action: 'removeButtons'
-            }, function(response) {
-                if (response && response.success) {
-                    showTableStatus(`已移除 ${response.removedCount} 个按钮`, 'success');
-                } else {
-                    showTableStatus('移除按钮失败', 'error');
+            if (!tabs || tabs.length === 0) {
+                showTableStatus('无法获取当前标签页信息', 'error');
+                return;
+            }
+            
+            // 先检查内容脚本是否已注入
+            chrome.tabs.sendMessage(tabs[0].id, { action: 'ping' }, function(response) {
+                if (chrome.runtime.lastError) {
+                    // 内容脚本未注入，显示错误
+                    showTableStatus('无法连接到页面。请确保你正在访问包含表格的网站。', 'error');
+                    return;
                 }
+                
+                // 内容脚本已注入，发送移除按钮请求
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    action: 'removeButtons'
+                }, function(response) {
+                    if (chrome.runtime.lastError) {
+                        showTableStatus('与页面通信失败：' + chrome.runtime.lastError.message, 'error');
+                        return;
+                    }
+                    
+                    if (response && response.success) {
+                        showTableStatus(`已移除 ${response.removedCount} 个按钮`, 'success');
+                    } else {
+                        showTableStatus('移除按钮失败', 'error');
+                    }
+                });
             });
         });
     });
