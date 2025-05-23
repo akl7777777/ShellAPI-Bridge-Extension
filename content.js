@@ -713,6 +713,7 @@ function createControlPanel() {
             border: 2px solid rgba(255,255,255,0.2);
             user-select: none;
             position: relative;
+            overflow: hidden;
         `;
 
         // 拖动相关变量
@@ -722,6 +723,108 @@ function createControlPanel() {
         let initialX = 0;
         let initialY = 0;
         let dragStartTime = 0;
+        let isCollapsed = false; // 是否处于贴边收起状态
+        let justDragged = false; // 标记是否刚刚完成拖动，用于阻止click事件
+
+        // 边缘检测和自动收起功能
+        function checkEdgeCollapse() {
+            const rect = container.getBoundingClientRect();
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const edgeThreshold = 10; // 距离边缘多少像素开始收起
+            
+            const nearLeftEdge = rect.left <= edgeThreshold;
+            const nearRightEdge = rect.right >= viewportWidth - edgeThreshold;
+            const nearTopEdge = rect.top <= edgeThreshold;
+            const nearBottomEdge = rect.bottom >= viewportHeight - edgeThreshold;
+            
+            const shouldCollapse = nearLeftEdge || nearRightEdge || nearTopEdge || nearBottomEdge;
+            
+            if (shouldCollapse && !isCollapsed) {
+                // 开始收起
+                isCollapsed = true;
+                let collapsedStyle = '';
+                
+                if (nearLeftEdge) {
+                    // 左边缘收起 - 向左移动一半宽度，让小条伸出左边缘
+                    collapsedStyle = `
+                        width: 12px;
+                        height: 48px;
+                        border-radius: 0 24px 24px 0;
+                        transform: translateX(-6px);
+                    `;
+                    toggleButton.style.fontSize = '14px';
+                    toggleButton.style.paddingLeft = '8px';
+                    toggleButton.style.paddingRight = '0px';
+                } else if (nearRightEdge) {
+                    // 右边缘收起 - 向右移动一半宽度，让小条伸出右边缘
+                    collapsedStyle = `
+                        width: 12px;
+                        height: 48px;
+                        border-radius: 24px 0 0 24px;
+                        transform: translateX(36px);
+                    `;
+                    toggleButton.style.fontSize = '14px';
+                    toggleButton.style.paddingRight = '8px';
+                    toggleButton.style.paddingLeft = '0px';
+                } else if (nearTopEdge) {
+                    // 上边缘收起 - 向上移动一半高度，让小条伸出上边缘
+                    collapsedStyle = `
+                        width: 48px;
+                        height: 12px;
+                        border-radius: 0 0 24px 24px;
+                        transform: translateY(-6px);
+                    `;
+                    toggleButton.style.fontSize = '12px';
+                    toggleButton.style.paddingTop = '8px';
+                    toggleButton.style.paddingBottom = '0px';
+                } else if (nearBottomEdge) {
+                    // 下边缘收起 - 向下移动一半高度，让小条伸出下边缘
+                    collapsedStyle = `
+                        width: 48px;
+                        height: 12px;
+                        border-radius: 24px 24px 0 0;
+                        transform: translateY(36px);
+                    `;
+                    toggleButton.style.fontSize = '12px';
+                    toggleButton.style.paddingBottom = '8px';
+                    toggleButton.style.paddingTop = '0px';
+                }
+                
+                toggleButton.style.cssText += collapsedStyle;
+                toggleButton.style.background = 'linear-gradient(135deg, #2196F3, #1976D2)';
+                toggleButton.style.boxShadow = '0 1px 6px rgba(0,0,0,0.2)';
+                toggleButton.title = 'ShellAPI Bridge (已收起) - 点击展开';
+                
+                console.log('🔽 控制面板已收起到边缘');
+                
+            } else if (!shouldCollapse && isCollapsed) {
+                // 展开回圆形
+                isCollapsed = false;
+                toggleButton.style.cssText = `
+                    width: 48px;
+                    height: 48px;
+                    background: linear-gradient(135deg, #4CAF50, #45a049);
+                    border-radius: 50%;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 20px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+                    transition: all 0.3s ease;
+                    border: 2px solid rgba(255,255,255,0.2);
+                    user-select: none;
+                    position: relative;
+                    overflow: hidden;
+                    padding: 0;
+                    transform: none;
+                `;
+                toggleButton.title = 'ShellAPI Bridge - 点击展开，长按拖动';
+                
+                console.log('🔼 控制面板已展开为圆形');
+            }
+        }
 
         // 创建展开的菜单面板
         const panel = document.createElement('div');
@@ -852,6 +955,11 @@ function createControlPanel() {
                 container.style.left = pos.x + 'px';
                 container.style.top = pos.y + 'px';
                 container.style.right = 'auto'; // 取消右侧定位
+                
+                // 恢复位置后检查是否需要收起
+                setTimeout(() => {
+                    checkEdgeCollapse();
+                }, 100);
             }
         });
 
@@ -874,6 +982,16 @@ function createControlPanel() {
             toggleButton.style.transform = 'scale(1.1)';
             toggleButton.style.boxShadow = '0 6px 20px rgba(0,0,0,0.3)';
             toggleButton.style.zIndex = '10001';
+            
+            // 拖动时恢复圆形状态
+            if (isCollapsed) {
+                isCollapsed = false;
+                toggleButton.style.width = '48px';
+                toggleButton.style.height = '48px';
+                toggleButton.style.borderRadius = '50%';
+                toggleButton.style.fontSize = '20px';
+                toggleButton.style.padding = '0';
+            }
             
             // 添加拖动提示
             toggleButton.style.background = 'linear-gradient(135deg, #FF9800, #F57C00)';
@@ -919,6 +1037,12 @@ function createControlPanel() {
             isDragging = false;
             const dragDuration = Date.now() - dragStartTime;
             
+            // 计算拖动距离
+            const dragDistance = Math.sqrt(
+                Math.pow(e.clientX - dragStartX, 2) + 
+                Math.pow(e.clientY - dragStartY, 2)
+            );
+            
             // 恢复按钮样式
             toggleButton.style.cursor = 'pointer';
             toggleButton.style.transform = 'scale(1)';
@@ -939,37 +1063,189 @@ function createControlPanel() {
                 console.log('💾 控制面板位置已保存:', position);
             });
             
-            // 如果拖动时间很短（小于200ms），认为是点击而不是拖动
-            if (dragDuration < 200) {
-                setTimeout(() => {
-                    if (!isDragging) { // 确保不是在拖动中
-                        showPanel();
-                    }
-                }, 50);
-            }
+            // 拖动结束后检查是否需要收起
+            setTimeout(() => {
+                checkEdgeCollapse();
+            }, 100);
             
-            console.log('🖱️ 拖动结束，新位置:', position);
+            // 判断是否为真正的拖动（距离超过5像素或时间超过200ms）
+            const isDragAction = dragDistance >= 5 || dragDuration >= 200;
+            
+            if (isDragAction) {
+                // 真正的拖动 - 设置标志阻止后续的click事件
+                justDragged = true;
+                console.log(`🖱️ 拖动结束，距离: ${dragDistance.toFixed(1)}px，时间: ${dragDuration}ms，新位置:`, position);
+                
+                // 延迟重置标志，确保click事件被阻止
+                setTimeout(() => {
+                    justDragged = false;
+                }, 100);
+            } else {
+                // 快速点击 - 允许展开面板
+                justDragged = false;
+                console.log('🖱️ 检测到快速点击，准备展开面板');
+            }
         });
 
         // 折叠按钮悬停效果（仅在非拖动状态下）
         toggleButton.addEventListener('mouseenter', () => {
             if (!isDragging) {
-                toggleButton.style.transform = 'scale(1.05)';
-                toggleButton.style.boxShadow = '0 4px 15px rgba(0,0,0,0.2)';
+                if (isCollapsed) {
+                    // 收起状态下的悬停效果 - 暂时恢复球形
+                    toggleButton.style.cssText = `
+                        width: 48px;
+                        height: 48px;
+                        background: linear-gradient(135deg, #42A5F5, #1E88E5);
+                        border-radius: 50%;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 20px;
+                        box-shadow: 0 4px 15px rgba(66, 165, 245, 0.4);
+                        transition: all 0.3s ease;
+                        border: 2px solid rgba(255,255,255,0.3);
+                        user-select: none;
+                        position: relative;
+                        overflow: hidden;
+                        padding: 0;
+                        transform: scale(1.05);
+                        z-index: 10001;
+                    `;
+                    toggleButton.title = 'ShellAPI Bridge - 点击展开菜单';
+                    console.log('🔵 收起状态悬停：暂时恢复球形');
+                } else {
+                    // 正常状态下的悬停效果
+                    toggleButton.style.transform = 'scale(1.05)';
+                    toggleButton.style.boxShadow = '0 4px 15px rgba(0,0,0,0.2)';
+                }
             }
         });
         
         toggleButton.addEventListener('mouseleave', () => {
             if (!isDragging) {
-                toggleButton.style.transform = 'scale(1)';
-                toggleButton.style.boxShadow = '0 2px 10px rgba(0,0,0,0.15)';
+                if (isCollapsed) {
+                    // 直接恢复收起状态，不重新检查位置
+                    const rect = container.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
+                    const edgeThreshold = 10;
+                    
+                    const nearLeftEdge = rect.left <= edgeThreshold;
+                    const nearRightEdge = rect.right >= viewportWidth - edgeThreshold;
+                    const nearTopEdge = rect.top <= edgeThreshold;
+                    const nearBottomEdge = rect.bottom >= viewportHeight - edgeThreshold;
+                    
+                    // 根据边缘位置直接恢复对应的收起样式
+                    if (nearLeftEdge) {
+                        toggleButton.style.cssText = `
+                            width: 12px;
+                            height: 48px;
+                            border-radius: 0 24px 24px 0;
+                            transform: translateX(-6px);
+                            background: linear-gradient(135deg, #2196F3, #1976D2);
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 14px;
+                            box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+                            transition: all 0.3s ease;
+                            border: 2px solid rgba(255,255,255,0.2);
+                            user-select: none;
+                            position: relative;
+                            overflow: hidden;
+                            padding-left: 8px;
+                            padding-right: 0px;
+                        `;
+                    } else if (nearRightEdge) {
+                        toggleButton.style.cssText = `
+                            width: 12px;
+                            height: 48px;
+                            border-radius: 24px 0 0 24px;
+                            transform: translateX(36px);
+                            background: linear-gradient(135deg, #2196F3, #1976D2);
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 14px;
+                            box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+                            transition: all 0.3s ease;
+                            border: 2px solid rgba(255,255,255,0.2);
+                            user-select: none;
+                            position: relative;
+                            overflow: hidden;
+                            padding-right: 8px;
+                            padding-left: 0px;
+                        `;
+                    } else if (nearTopEdge) {
+                        toggleButton.style.cssText = `
+                            width: 48px;
+                            height: 12px;
+                            border-radius: 0 0 24px 24px;
+                            transform: translateY(-6px);
+                            background: linear-gradient(135deg, #2196F3, #1976D2);
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 12px;
+                            box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+                            transition: all 0.3s ease;
+                            border: 2px solid rgba(255,255,255,0.2);
+                            user-select: none;
+                            position: relative;
+                            overflow: hidden;
+                            padding-top: 8px;
+                            padding-bottom: 0px;
+                        `;
+                    } else if (nearBottomEdge) {
+                        toggleButton.style.cssText = `
+                            width: 48px;
+                            height: 12px;
+                            border-radius: 24px 24px 0 0;
+                            transform: translateY(36px);
+                            background: linear-gradient(135deg, #2196F3, #1976D2);
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 12px;
+                            box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+                            transition: all 0.3s ease;
+                            border: 2px solid rgba(255,255,255,0.2);
+                            user-select: none;
+                            position: relative;
+                            overflow: hidden;
+                            padding-bottom: 8px;
+                            padding-top: 0px;
+                        `;
+                    }
+                    
+                    toggleButton.title = 'ShellAPI Bridge (已收起) - 点击展开';
+                    console.log('🔽 悬停结束：直接恢复收起状态');
+                } else {
+                    // 恢复正常状态的样式
+                    toggleButton.style.transform = 'scale(1)';
+                    toggleButton.style.boxShadow = '0 2px 10px rgba(0,0,0,0.15)';
+                }
             }
         });
 
-        // 点击折叠按钮展开菜单（仅在非拖动状态下触发）
+        // 点击折叠按钮展开菜单（只有在非拖动状态且没有刚刚拖动时才触发）
         toggleButton.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (!isDragging && Date.now() - dragStartTime > 200) {
+            
+            // 如果刚刚拖动过，阻止展开面板
+            if (justDragged) {
+                console.log('🚫 阻止拖动后的点击事件');
+                return;
+            }
+            
+            // 只有在真正点击时才展开面板
+            if (!isDragging) {
+                console.log('🖱️ 点击展开面板');
                 showPanel();
             }
         });
@@ -994,6 +1270,13 @@ function createControlPanel() {
             }
         });
 
+        // 窗口大小改变时重新检查边缘收起
+        window.addEventListener('resize', () => {
+            setTimeout(() => {
+                checkEdgeCollapse();
+            }, 100);
+        });
+
         // 展开面板函数
         function showPanel() {
             panel.style.display = 'flex';
@@ -1012,6 +1295,10 @@ function createControlPanel() {
             setTimeout(() => {
                 panel.style.display = 'none';
                 toggleButton.style.display = 'flex';
+                // 面板收起后重新检查边缘收起
+                setTimeout(() => {
+                    checkEdgeCollapse();
+                }, 50);
             }, 200);
         }
 
