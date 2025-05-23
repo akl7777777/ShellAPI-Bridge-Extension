@@ -524,10 +524,14 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
         console.log(`✅ 成功获取 ${modelList.length} 个模型`);
         console.log(`📋 模型列表: ${models}`);
 
+        // 获取当前页面的URL作为base_url参数
+        const currentBaseUrl = `${window.location.protocol}//${window.location.host}`;
+        console.log(`🌐 使用当前页面URL作为base_url: ${currentBaseUrl}`);
+
         // 步骤3: 拼接可用模型组成url
         const params = new URLSearchParams({
             name: bridgeName,
-            base_url: bridgeBaseUrl,
+            base_url: currentBaseUrl,  // 使用当前页面的URL，而不是传入的bridgeBaseUrl
             model: models,
             billing_type: '4',
             type: '7007'
