@@ -456,6 +456,17 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
         const secretKey = `sk-${keyValue}`;
         console.log(`📌 使用key值: ${keyValue}`);
         console.log(`🔑 生成密钥: ${secretKey}`);
+
+        // 复制SK令牌到剪切板
+        try {
+            await copyToClipboard(secretKey);
+            showNotification(`🔑 SK令牌已复制到剪切板: ${secretKey}`, 'success');
+            console.log(`📋 SK令牌已复制到剪切板: ${secretKey}`);
+        } catch (clipboardError) {
+            console.warn('⚠️ 复制到剪切板失败:', clipboardError);
+            showNotification(`⚠️ 复制失败，SK令牌: ${secretKey}`, 'info');
+        }
+
         showNotification(`正在使用密钥获取模型列表...`, 'info');
 
         // 构建API URL
@@ -528,7 +539,7 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
         // 打开URL
         window.open(finalUrl, '_blank');
 
-        showNotification(`成功获取 ${modelList.length} 个模型，正在跳转...`, 'success');
+        showNotification(`🎯 成功获取 ${modelList.length} 个模型，SK已复制，正在跳转...`, 'success');
 
         button.textContent = '✅ 完成';
         button.style.background = '#4CAF50';
@@ -550,6 +561,43 @@ async function handleRowAction(keyValue, bridgeBaseUrl, bridgeName, button) {
             button.textContent = originalText;
             button.style.background = '#4CAF50';
         }, 2000);
+    }
+}
+
+// 复制文本到剪切板的通用函数
+async function copyToClipboard(text) {
+    try {
+        // 优先使用现代的 Clipboard API
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+        
+        // 兜底方案：使用传统的 execCommand 方法
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.cssText = `
+            position: fixed;
+            top: -9999px;
+            left: -9999px;
+            opacity: 0;
+            pointer-events: none;
+        `;
+        
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        if (!successful) {
+            throw new Error('execCommand copy failed');
+        }
+        
+    } catch (error) {
+        console.error('复制到剪切板失败:', error);
+        throw error;
     }
 }
 
@@ -633,56 +681,108 @@ function createControlPanel() {
             return;
         }
 
-        const panel = document.createElement('div');
-        panel.id = 'shellapi-control-panel';
-        panel.style.cssText = `
+        // 创建主容器
+        const container = document.createElement('div');
+        container.id = 'shellapi-control-panel';
+        container.style.cssText = `
             position: fixed;
             top: 80px;
             right: 20px;
-            background: white;
-            border-radius: 8px;
-            padding: 12px;
             z-index: 10000;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            min-width: 180px;
             font-family: Arial, sans-serif;
             font-size: 14px;
-            border: 1px solid #ddd;
         `;
 
+        // 创建折叠状态的小按钮
+        const toggleButton = document.createElement('div');
+        toggleButton.id = 'shellapi-toggle-btn';
+        toggleButton.innerHTML = '🔌';
+        toggleButton.title = 'ShellAPI Bridge - 点击展开，长按拖动';
+        toggleButton.style.cssText = `
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+            transition: all 0.3s ease;
+            border: 2px solid rgba(255,255,255,0.2);
+            user-select: none;
+            position: relative;
+        `;
+
+        // 拖动相关变量
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let initialX = 0;
+        let initialY = 0;
+        let dragStartTime = 0;
+
+        // 创建展开的菜单面板
+        const panel = document.createElement('div');
+        panel.id = 'shellapi-menu-panel';
+        panel.style.cssText = `
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 200px;
+            border: 1px solid #e0e0e0;
+            transform: scale(0.95);
+            opacity: 0;
+            transition: all 0.2s ease;
+        `;
+
+        // 面板标题
         const title = document.createElement('div');
-        title.textContent = 'ShellAPI Bridge';
+        title.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: bold; color: #333; font-size: 16px;">🔌 ShellAPI Bridge</span>
+                <span id="shellapi-close-btn" style="cursor: pointer; font-size: 18px; color: #666; padding: 2px 6px; border-radius: 50%; transition: all 0.2s ease;" title="收起菜单">×</span>
+            </div>
+        `;
         title.style.cssText = `
-            font-weight: bold;
-            padding-bottom: 8px;
+            padding-bottom: 12px;
             border-bottom: 1px solid #eee;
             margin-bottom: 8px;
-            font-size: 16px;
-            color: #333;
         `;
         panel.appendChild(title);
 
         // 添加"一键对接"按钮
         const scanBtn = document.createElement('button');
-        scanBtn.textContent = '一键对接';
+        scanBtn.innerHTML = '🔍 一键对接';
         scanBtn.style.cssText = `
-            background: #4CAF50;
+            background: linear-gradient(135deg, #4CAF50, #45a049);
             color: white;
             border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
+            padding: 10px 16px;
+            border-radius: 8px;
             cursor: pointer;
             font-weight: 500;
             transition: all 0.2s ease;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         `;
         scanBtn.addEventListener('mouseenter', () => {
-            scanBtn.style.background = '#45a049';
+            scanBtn.style.transform = 'translateY(-1px)';
+            scanBtn.style.boxShadow = '0 4px 12px rgba(76, 175, 80, 0.3)';
         });
         scanBtn.addEventListener('mouseleave', () => {
-            scanBtn.style.background = '#4CAF50';
+            scanBtn.style.transform = 'translateY(0)';
+            scanBtn.style.boxShadow = 'none';
         });
         scanBtn.addEventListener('click', async () => {
             if (!autoProcessing) {
@@ -697,30 +797,226 @@ function createControlPanel() {
 
         // 添加"清除按钮"按钮
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = '清除按钮';
+        clearBtn.innerHTML = '🗑️ 清除按钮';
         clearBtn.style.cssText = `
-            background: #f44336;
+            background: linear-gradient(135deg, #f44336, #d32f2f);
             color: white;
             border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
+            padding: 10px 16px;
+            border-radius: 8px;
             cursor: pointer;
             font-weight: 500;
             transition: all 0.2s ease;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         `;
         clearBtn.addEventListener('mouseenter', () => {
-            clearBtn.style.background = '#d32f2f';
+            clearBtn.style.transform = 'translateY(-1px)';
+            clearBtn.style.boxShadow = '0 4px 12px rgba(244, 67, 54, 0.3)';
         });
         clearBtn.addEventListener('mouseleave', () => {
-            clearBtn.style.background = '#f44336';
+            clearBtn.style.transform = 'translateY(0)';
+            clearBtn.style.boxShadow = 'none';
         });
         clearBtn.addEventListener('click', () => {
             const removedCount = removeAllButtons();
-            showNotification(`已清除 ${removedCount} 个按钮`, 'success');
+            showNotification(`🎯 已清除 ${removedCount} 个按钮`, 'success');
         });
         panel.appendChild(clearBtn);
 
-        document.body.appendChild(panel);
+        // 添加状态信息
+        const statusDiv = document.createElement('div');
+        statusDiv.style.cssText = `
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-top: 4px;
+        `;
+        statusDiv.textContent = '点击上方按钮开始操作';
+        panel.appendChild(statusDiv);
+
+        // 组装容器
+        container.appendChild(toggleButton);
+        container.appendChild(panel);
+        document.body.appendChild(container);
+
+        // 从存储中恢复位置
+        chrome.storage.sync.get(['controlPanelPosition'], (result) => {
+            if (result.controlPanelPosition) {
+                const pos = result.controlPanelPosition;
+                container.style.left = pos.x + 'px';
+                container.style.top = pos.y + 'px';
+                container.style.right = 'auto'; // 取消右侧定位
+            }
+        });
+
+        // 拖动功能实现
+        toggleButton.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            dragStartTime = Date.now();
+            isDragging = true;
+            
+            // 记录鼠标按下时的位置和元素位置
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            
+            const rect = container.getBoundingClientRect();
+            initialX = rect.left;
+            initialY = rect.top;
+            
+            // 拖动时的视觉反馈
+            toggleButton.style.cursor = 'grabbing';
+            toggleButton.style.transform = 'scale(1.1)';
+            toggleButton.style.boxShadow = '0 6px 20px rgba(0,0,0,0.3)';
+            toggleButton.style.zIndex = '10001';
+            
+            // 添加拖动提示
+            toggleButton.style.background = 'linear-gradient(135deg, #FF9800, #F57C00)';
+            
+            console.log('🖱️ 开始拖动控制面板');
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            e.preventDefault();
+            
+            // 计算新位置
+            const deltaX = e.clientX - dragStartX;
+            const deltaY = e.clientY - dragStartY;
+            
+            let newX = initialX + deltaX;
+            let newY = initialY + deltaY;
+            
+            // 边界检测 - 确保不会拖出视窗
+            const containerRect = container.getBoundingClientRect();
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            
+            // 左边界
+            newX = Math.max(0, newX);
+            // 右边界
+            newX = Math.min(viewportWidth - containerRect.width, newX);
+            // 上边界
+            newY = Math.max(0, newY);
+            // 下边界
+            newY = Math.min(viewportHeight - containerRect.height, newY);
+            
+            // 更新位置
+            container.style.left = newX + 'px';
+            container.style.top = newY + 'px';
+            container.style.right = 'auto'; // 取消右侧定位
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            const dragDuration = Date.now() - dragStartTime;
+            
+            // 恢复按钮样式
+            toggleButton.style.cursor = 'pointer';
+            toggleButton.style.transform = 'scale(1)';
+            toggleButton.style.boxShadow = '0 2px 10px rgba(0,0,0,0.15)';
+            toggleButton.style.zIndex = '10000';
+            toggleButton.style.background = 'linear-gradient(135deg, #4CAF50, #45a049)';
+            
+            // 保存新位置到存储
+            const rect = container.getBoundingClientRect();
+            const position = {
+                x: rect.left,
+                y: rect.top
+            };
+            
+            chrome.storage.sync.set({
+                controlPanelPosition: position
+            }, () => {
+                console.log('💾 控制面板位置已保存:', position);
+            });
+            
+            // 如果拖动时间很短（小于200ms），认为是点击而不是拖动
+            if (dragDuration < 200) {
+                setTimeout(() => {
+                    if (!isDragging) { // 确保不是在拖动中
+                        showPanel();
+                    }
+                }, 50);
+            }
+            
+            console.log('🖱️ 拖动结束，新位置:', position);
+        });
+
+        // 折叠按钮悬停效果（仅在非拖动状态下）
+        toggleButton.addEventListener('mouseenter', () => {
+            if (!isDragging) {
+                toggleButton.style.transform = 'scale(1.05)';
+                toggleButton.style.boxShadow = '0 4px 15px rgba(0,0,0,0.2)';
+            }
+        });
+        
+        toggleButton.addEventListener('mouseleave', () => {
+            if (!isDragging) {
+                toggleButton.style.transform = 'scale(1)';
+                toggleButton.style.boxShadow = '0 2px 10px rgba(0,0,0,0.15)';
+            }
+        });
+
+        // 点击折叠按钮展开菜单（仅在非拖动状态下触发）
+        toggleButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!isDragging && Date.now() - dragStartTime > 200) {
+                showPanel();
+            }
+        });
+
+        // 点击关闭按钮收起菜单
+        const closeBtn = panel.querySelector('#shellapi-close-btn');
+        closeBtn.addEventListener('mouseenter', () => {
+            closeBtn.style.background = '#f0f0f0';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+            closeBtn.style.background = 'transparent';
+        });
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hidePanel();
+        });
+
+        // 点击外部区域收起菜单
+        document.addEventListener('click', (e) => {
+            if (!container.contains(e.target) && !isDragging) {
+                hidePanel();
+            }
+        });
+
+        // 展开面板函数
+        function showPanel() {
+            panel.style.display = 'flex';
+            toggleButton.style.display = 'none';
+            // 添加展开动画
+            setTimeout(() => {
+                panel.style.transform = 'scale(1)';
+                panel.style.opacity = '1';
+            }, 10);
+        }
+
+        // 收起面板函数
+        function hidePanel() {
+            panel.style.transform = 'scale(0.95)';
+            panel.style.opacity = '0';
+            setTimeout(() => {
+                panel.style.display = 'none';
+                toggleButton.style.display = 'flex';
+            }, 200);
+        }
+
+        console.log('✅ 可拖动控制面板创建成功');
+
     } catch (error) {
         console.error('❌ 创建控制面板失败:', error);
     }
